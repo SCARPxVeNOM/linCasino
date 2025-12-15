@@ -1,0 +1,29 @@
+[package]
+name = "bankroll"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+abi.workspace = true
+async-graphql.workspace = true
+log.workspace = true
+linera-sdk.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["rt", "sync"] }
+linera-sdk = { workspace = true, features = ["test", "wasmer"] }
+
+[dev-dependencies]
+linera-sdk = { workspace = true, features = ["test"] }
+
+[[bin]]
+name = "bankroll_contract"
+path = "src/contract.rs"
+
+[[bin]]
+name = "bankroll_service"
+path = "src/service.rs"
+

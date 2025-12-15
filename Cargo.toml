@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "abi",
+    "bankroll",
+    "poker",
+    "rummy",
+    "roulette",
+]
+
+[workspace.dependencies]
+async-graphql = { version = "=7.0.17", default-features = false }
+async-graphql-derive = { version = "=7.0.17", default-features = false }
+linera-sdk = { version = "0.15.6" }
+futures = { version = "0.3" }
+getrandom = { version = "0.2.15", default-features = false, features = ["custom"] }
+log = { version = "0.4.27" }
+rand = { version = "0.8.5" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+tokio = { version = "1.40", features = ["rt", "sync"] }
+
+abi = { path = "./abi" }
+bankroll = { path = "./bankroll" }
+
+[profile.release]
+debug = true
+lto = true
+opt-level = 'z'
+strip = 'debuginfo'
+
