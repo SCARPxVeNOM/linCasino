@@ -425,10 +425,6 @@ Contributions are welcome! Please ensure:
 4. Multiplayer protocol maintains consistency
 5. Tests pass (when test suite is added)
 
-## 📄 License
-
-[Your License Here]
-
 ## 🙏 Acknowledgments
 
 - Built on [Linera](https://linera.io/) - The multi-chain blockchain platform
@@ -437,4 +433,4 @@ Contributions are welcome! Please ensure:
 
 ---
 
-**Built with ❤️ using Linera's multi-chain architecture**
+**Built with  Linera's multi-chain architecture**
