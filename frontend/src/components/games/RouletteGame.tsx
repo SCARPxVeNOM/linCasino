@@ -51,8 +51,18 @@ export default function RouletteGame({ onExit }: { onExit: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [isPlacingBet, setIsPlacingBet] = useState(false);
   
-  // Use chips from Linera profile - sync with backend
+  // Use chips from Linera profile - sync with backend (exact same logic as Poker/Rummy)
   const chips = profile?.balance ? Number(profile.balance) / 1e9 : 0;
+  
+  // Debug: Log profile state to help diagnose balance display issues
+  useEffect(() => {
+    console.log('RouletteGame: Profile state:', { 
+      profile, 
+      balance: profile?.balance, 
+      chips, 
+      loading: lineraLoading 
+    });
+  }, [profile, chips, lineraLoading]);
 
   // Save game mode to localStorage
   useEffect(() => {
@@ -60,16 +70,6 @@ export default function RouletteGame({ onExit }: { onExit: () => void }) {
       localStorage.setItem('roulette_game_mode', gameMode);
     }
   }, [gameMode]);
-
-  // Auto-refetch game state periodically when game is active
-  useEffect(() => {
-    if (safeLineraGame && !spinning) {
-      const interval = setInterval(() => {
-        refetch();
-      }, 2000); // Refetch every 2 seconds
-      return () => clearInterval(interval);
-    }
-  }, [safeLineraGame, spinning, refetch]);
 
   // Sync with Linera game state - this is the source of truth
   useEffect(() => {
@@ -140,13 +140,6 @@ export default function RouletteGame({ onExit }: { onExit: () => void }) {
       console.error('Error syncing Linera game state:', error);
     }
   }, [safeLineraGame, spinning, lastNumber]);
-
-  // Get balance on mount
-  useEffect(() => {
-    if (!lineraLoading && actions.getBalance) {
-      actions.getBalance();
-    }
-  }, [lineraLoading, actions]);
 
   const resolveBets = useCallback((num: number) => {
     const isRed = RED_NUMBERS.includes(num);
@@ -468,7 +461,12 @@ export default function RouletteGame({ onExit }: { onExit: () => void }) {
               </div>
               <div className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 rounded-lg">
                 <DollarSign size={16} className="text-yellow-400" />
-                <span className="font-mono font-bold text-yellow-400">{chips.toFixed(2)} LIN</span>
+                <span className="font-mono font-bold text-yellow-400">
+                  {lineraLoading ? '...' : profile ? chips.toFixed(2) : '0.00'} LIN
+                </span>
+                {!profile && !lineraLoading && (
+                  <span className="text-xs text-yellow-600">(Click Refresh)</span>
+                )}
               </div>
               {chips < 10 && (
                 <button
@@ -536,9 +534,14 @@ export default function RouletteGame({ onExit }: { onExit: () => void }) {
             Refresh
           </button>
           <div className="flex items-center bg-[#1a1c29] px-4 py-1.5 rounded-full border border-[#3f435e] shadow-inner">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse mr-2"></div>
+            <div className={`w-2 h-2 rounded-full mr-2 ${profile ? 'bg-green-500 animate-pulse' : 'bg-yellow-500 animate-pulse'}`}></div>
             <DollarSign size={16} className="text-yellow-400 mr-1" />
-            <span className="font-mono font-bold text-yellow-400 tracking-wider">{chips.toFixed(2)}</span>
+            <span className="font-mono font-bold text-yellow-400 tracking-wider">
+              {lineraLoading ? '...' : profile ? chips.toFixed(2) : '0.00'}
+            </span>
+            {!profile && !lineraLoading && (
+              <span className="ml-2 text-xs text-yellow-600">(Loading...)</span>
+            )}
           </div>
         </div>
       </div>

@@ -25,12 +25,12 @@ let rouletteClient: ApolloClient<any> | null = null;
 export function initializeLineraClient(lineraConfig: LineraConfig) {
   config = lineraConfig;
   
-  // Create separate clients for each game with their specific application endpoints
-  // For local multiplayer, force all frontends (5173/5174/5175) to talk to the
-  // same node service so they share lobbies and state.
-  // Format: http://localhost:8081/chains/{chainId}/applications/{appId}
-  const baseURL = 'http://localhost:8081';
-  const chainId = lineraConfig.defaultChain;
+  // Create separate clients for each game with their specific application endpoints.
+  // Use the active player’s chain if provided; otherwise fall back to default.
+  // This keeps per-user balances (e.g., roulette profile) in sync with the
+  // chain that faucet/mint targets (userChain1 if present).
+  const baseURL = lineraConfig.nodeServiceURL || 'http://localhost:8081';
+  const chainId = lineraConfig.userChain1 || lineraConfig.defaultChain;
   
   // Poker client
   if (lineraConfig.pokerAppId && chainId) {

@@ -14,21 +14,17 @@ import {
 export function useRoulette() {
   const client = getRouletteClient();
   
-  const { data: gameData, loading: gameLoading, error: gameError, refetch: refetchGame } = useQuery(
+  const { data: gameData, loading: gameLoading, refetch: refetchGame } = useQuery(
     GET_ROULETTE_SINGLE_PLAYER_DATA,
-    { 
-      client,
-      errorPolicy: 'all', // Continue even if there are errors
-      fetchPolicy: 'network-only'
-    }
+    { client }
   );
   
   const { data: profileData, loading: profileLoading, error: profileError, refetch: refetchProfile } = useQuery(
     GET_ROULETTE_PROFILE,
     { 
       client,
-      errorPolicy: 'all', // Continue even if there are errors
-      fetchPolicy: 'network-only'
+      // Ensure query runs immediately (same as Poker/Rummy)
+      skip: false
     }
   );
   
@@ -37,11 +33,15 @@ export function useRoulette() {
   const [placeBet] = useMutation(ROULETTE_PLACE_BET, { client });
   const [spin] = useMutation(ROULETTE_SPIN, { client });
 
+  // Log profile query state for debugging
+  if (profileError) {
+    console.error('Roulette profile query error:', profileError);
+  }
+
   return {
     game: gameData?.singlePlayerData?.game || null,
     profile: profileData?.getProfile || null,
     loading: gameLoading || profileLoading,
-    error: gameError || profileError,
     actions: {
       getBalance: async () => {
         try {
