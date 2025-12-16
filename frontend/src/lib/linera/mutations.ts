@@ -37,6 +37,60 @@ export const POKER_RAISE = gql`
   }
 `;
 
+export const POKER_CREATE_LOBBY = gql`
+  mutation PokerCreateLobby($maxPlayers: Int!) {
+    createLobby(maxPlayers: $maxPlayers)
+  }
+`;
+
+export const POKER_JOIN_LOBBY = gql`
+  mutation PokerJoinLobby($lobbyId: String!, $name: String!) {
+    joinLobby(lobbyId: $lobbyId, name: $name)
+  }
+`;
+
+export const POKER_CREATE_TABLE = gql`
+  mutation PokerCreateTable($smallBlind: String!, $bigBlind: String!, $maxPlayers: Int!) {
+    createTable(smallBlind: $smallBlind, bigBlind: $bigBlind, maxPlayers: $maxPlayers)
+  }
+`;
+
+export const POKER_SIT = gql`
+  mutation PokerSit($tableChain: String!, $name: String!) {
+    sit(tableChain: $tableChain, name: $name)
+  }
+`;
+
+export const POKER_LEAVE = gql`
+  mutation PokerLeave($tableChain: String!) {
+    leave(tableChain: $tableChain)
+  }
+`;
+
+export const POKER_PLAYER_ACTION = gql`
+  mutation PokerPlayerAction(
+    $tableChain: String!
+    $handId: String!
+    $seatId: Int!
+    $action: String!
+    $amount: String
+  ) {
+    playerAction(
+      tableChain: $tableChain
+      handId: $handId
+      seatId: $seatId
+      action: $action
+      amount: $amount
+    )
+  }
+`;
+
+export const POKER_HEARTBEAT = gql`
+  mutation PokerHeartbeat($tableChain: String!) {
+    heartbeat(tableChain: $tableChain)
+  }
+`;
+
 // Rummy Mutations
 export const RUMMY_GET_BALANCE = gql`
   mutation RummyGetBalance {

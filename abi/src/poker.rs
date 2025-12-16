@@ -1,6 +1,7 @@
 use crate::deck::{get_card_rank, get_card_suit, Deck};
 use async_graphql::scalar;
 use async_graphql_derive::SimpleObject;
+use linera_sdk::linera_base_types::ChainId;
 use serde::{Deserialize, Serialize};
 
 /// Maximum number of players allowed in a Poker game.
@@ -8,6 +9,9 @@ pub const MAX_POKER_PLAYERS: usize = 8;
 
 /// The stream name the application uses for events about poker game event.
 pub const POKER_STREAM_NAME: &[u8] = b"poker";
+
+/// Default per-turn action timeout in microseconds (30 seconds).
+pub const DEFAULT_ACTION_TIMEOUT_MICROS: u64 = 30_000_000;
 
 scalar!(PokerStatus);
 #[derive(Debug, Clone, Default, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize)]
@@ -50,6 +54,18 @@ pub enum UserStatus {
     InSinglePlayerGame = 7,
 }
 
+scalar!(ActionKind);
+/// Player actions used in the multiplayer protocol.
+#[derive(Debug, Clone, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize)]
+pub enum ActionKind {
+    Fold,
+    Check,
+    Call,
+    Bet,
+    Raise,
+    AllIn,
+}
+
 #[derive(Debug, Clone, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize, SimpleObject)]
 pub struct PokerPlayer {
     pub id: u8,
@@ -90,6 +106,12 @@ pub struct PokerGame {
     pub big_blind: u64,
     pub current_bet: u64,
     pub current_player: Option<u8>,
+    /// Monotonically increasing identifier for each hand played at the table.
+    pub hand_id: u64,
+    /// Minimum amount required for a raise in the current betting round.
+    pub min_raise: u64,
+    /// Deadline (in microseconds since epoch) for the current player to act.
+    pub action_deadline_micros: u64,
 }
 
 impl PokerGame {
@@ -106,6 +128,9 @@ impl PokerGame {
             big_blind,
             current_bet: 0,
             current_player: None,
+            hand_id: 0,
+            min_raise: big_blind,
+            action_deadline_micros: 0,
         }
     }
 
@@ -193,6 +218,40 @@ impl PokerGame {
             Err("Not enough cards in deck".to_string())
         }
     }
+
+    /// Find the next active player (not folded, not all-in) after `from`.
+    pub fn next_active_player(&self, from: u8) -> Option<u8> {
+        if self.players.is_empty() {
+            return None;
+        }
+        let n = self.players.len() as u8;
+        for step in 1..=n {
+            let idx = (from + step) % n;
+            if let Some(p) = self.players.get(idx as usize) {
+                if !p.is_folded && p.is_active && !p.is_all_in {
+                    return Some(idx);
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns true if the betting round is complete (all active players have matched current_bet).
+    pub fn is_betting_round_complete(&self) -> bool {
+        let target = self.current_bet;
+        let mut active_found = false;
+        for p in &self.players {
+            if p.is_folded || p.is_all_in || !p.is_active {
+                continue;
+            }
+            active_found = true;
+            if p.current_bet < target {
+                return false;
+            }
+        }
+        // If there are no active players, we consider the round complete.
+        !active_found || true
+    }
 }
 
 /// Evaluate poker hand strength (simplified)
@@ -271,5 +330,29 @@ pub fn evaluate_hand(hole_cards: &[u8], community_cards: &[u8]) -> (u32, String)
 pub struct GameData {
     pub user_status: UserStatus,
     pub game: Option<PokerGame>,
+}
+
+/// Information about a player waiting in a multiplayer lobby.
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize, SimpleObject)]
+pub struct LobbyPlayerInfo {
+    pub chain_id: ChainId,
+    pub name: String,
+}
+
+/// Simple multiplayer lobby representation.
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize, SimpleObject)]
+pub struct PokerLobby {
+    /// Opaque lobby identifier that players can share.
+    pub id: String,
+    /// Chain on which the lobby was created (typically the master/default chain).
+    pub host_chain: ChainId,
+    /// Creation timestamp in microseconds.
+    pub created_at_micros: u64,
+    /// Maximum number of players that may join this lobby.
+    pub max_players: u8,
+    /// Whether the game has started already.
+    pub started: bool,
+    /// Players that have joined this lobby so far.
+    pub players: Vec<LobbyPlayerInfo>,
 }
 

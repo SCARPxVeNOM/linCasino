@@ -198,8 +198,202 @@ const PitBossModal = ({ onClose, advice }: { onClose: () => void, advice: string
   </div>
 );
 
+// --- POKER LOBBY (Multiplayer skeleton) ---
+const PokerLobby = ({
+  onExit,
+  walletBalance,
+  loadingWallet,
+  onRefreshWallet,
+}: {
+  onExit: () => void;
+  walletBalance: number;
+  loadingWallet: boolean;
+  onRefreshWallet: () => void;
+}) => {
+  const { lobbies, loading, actions } = usePoker();
+  const [playerName, setPlayerName] = useState('');
+  const [maxPlayers, setMaxPlayers] = useState(4);
+  const [joinId, setJoinId] = useState('');
+  const [status, setStatus] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    if (!playerName.trim()) {
+      setStatus('Enter your name before creating a lobby.');
+      return;
+    }
+    try {
+      setStatus('Creating lobby...');
+      await actions.createLobby(maxPlayers);
+      setStatus('Lobby created. Share the ID from the list below.');
+    } catch (e) {
+      setStatus('Failed to create lobby.');
+    }
+  };
+
+  const handleJoin = async () => {
+    if (!playerName.trim() || !joinId.trim()) {
+      setStatus('Enter your name and lobby ID to join.');
+      return;
+    }
+    try {
+      setStatus('Joining lobby...');
+      await actions.joinLobby(joinId.trim(), playerName.trim());
+      setStatus('Joined lobby (if ID exists). See players list below.');
+    } catch (e) {
+      setStatus('Failed to join lobby.');
+    }
+  };
+
+  const handleSelectLobby = async (id: string) => {
+    setJoinId(id);
+    setStatus('Lobby ID copied. You can now click "Join Lobby".');
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      // Clipboard might not be available; ignore.
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-[#020617] text-slate-100 font-sans">
+      <div className="h-14 bg-[#020617] flex items-center justify-between px-4 shadow-lg border-b border-slate-800">
+        <button onClick={onExit} className="flex items-center text-slate-400 hover:text-white">
+          <ArrowLeft size={20} className="mr-2" /> Lobby
+        </button>
+        <div className="text-lg font-bold text-yellow-400 tracking-widest">POKER LOBBIES</div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-slate-900 border border-yellow-500/40 rounded-full px-3 py-1 text-xs font-mono text-yellow-400 shadow">
+            <DollarSign size={14} className="mr-1" />
+            {loadingWallet ? '...' : `${walletBalance.toFixed(2)} LIN`}
+            <button
+              onClick={onRefreshWallet}
+              className="ml-2 text-slate-300 hover:text-white"
+              title="Refresh wallet"
+            >
+              <RefreshCw size={14} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 grid md:grid-cols-2 gap-6 p-6">
+        <div className="bg-slate-900/70 border border-slate-700 rounded-2xl p-4 flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-slate-200 mb-1">Your Identity</h2>
+          <input
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            placeholder="Enter your display name (visible to others)"
+            className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm outline-none focus:border-yellow-500"
+          />
+
+          <div className="mt-4 border-t border-slate-700 pt-3">
+            <h3 className="text-sm font-semibold mb-2">Create Lobby</h3>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="text-xs text-slate-400">Max players</label>
+              <input
+                type="number"
+                min={2}
+                max={8}
+                value={maxPlayers}
+                onChange={(e) => setMaxPlayers(Number(e.target.value) || 4)}
+                className="w-16 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs"
+              />
+            </div>
+            <button
+              onClick={handleCreate}
+              className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-bold rounded-lg"
+            >
+              Create Lobby
+            </button>
+          </div>
+
+          <div className="mt-4 border-t border-slate-700 pt-3">
+            <h3 className="text-sm font-semibold mb-2">Join Lobby</h3>
+            <input
+              value={joinId}
+              onChange={(e) => setJoinId(e.target.value)}
+              placeholder="Paste lobby ID"
+              className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs outline-none focus:border-yellow-500 mb-2"
+            />
+            <button
+              onClick={handleJoin}
+              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold rounded-lg"
+            >
+              Join Lobby
+            </button>
+          </div>
+
+          {status && <div className="mt-3 text-xs text-slate-300">{status}</div>}
+        </div>
+
+        <div className="bg-slate-900/70 border border-slate-700 rounded-2xl p-4 flex flex-col">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-slate-200">Open Lobbies</h2>
+            {loading && <span className="text-[11px] text-slate-400">Loading…</span>}
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-3 text-xs">
+            {(lobbies || []).length === 0 && (
+              <div className="text-slate-400 text-xs">No lobbies yet. Create one above.</div>
+            )}
+            {(lobbies || []).map((lobby: any) => {
+              const playerCount = lobby.players?.length || 0;
+              const youHere =
+                playerName &&
+                (lobby.players || []).some((p: any) => (p?.name || '').toLowerCase() === playerName.toLowerCase());
+
+              return (
+                <button
+                  type="button"
+                  key={lobby.id}
+                  onClick={() => handleSelectLobby(lobby.id)}
+                  className="w-full text-left border border-slate-700 rounded-xl px-3 py-2 bg-slate-950/60 flex flex-col gap-1 hover:border-yellow-500/60 hover:bg-slate-900/80 transition-colors"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="font-mono text-[11px] text-yellow-400 truncate max-w-[230px]">
+                      ID: {lobby.id}
+                    </div>
+                    <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                      {youHere && <span className="text-emerald-400 font-semibold">You’re in</span>}
+                      <span>
+                        {playerCount}/{lobby.maxPlayers} players
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(lobby.players || []).map((p: any) => (
+                      <span
+                        key={p.chainId + p.name}
+                        className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] text-slate-200"
+                      >
+                        {p.name || 'Player'}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-1 text-[10px] text-slate-500">
+                    Click to copy ID &ndash; paste or press “Join Lobby” on another tab.
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- POKER GAME (Integrated with Linera) ---
-const PokerGame = ({ onExit }: { onExit: () => void }) => {
+const PokerGame = ({
+  onExit,
+  walletBalance,
+  loadingWallet,
+  onRefreshWallet,
+}: {
+  onExit: () => void;
+  walletBalance: number;
+  loadingWallet: boolean;
+  onRefreshWallet: () => void;
+}) => {
   const { game: lineraGame, profile, loading, actions } = usePoker();
   const [deck, setDeck] = useState<Card[]>([]);
   const [communityCards, setCommunityCards] = useState<Card[]>([]);
@@ -327,16 +521,31 @@ const PokerGame = ({ onExit }: { onExit: () => void }) => {
       {showPitBoss && <PitBossModal onClose={() => setShowPitBoss(false)} advice={pitBossAdvice} />}
 
       <div className="h-14 bg-[#0f172a] flex items-center justify-between px-4 shadow-xl z-20 border-b border-slate-700">
-        <button onClick={onExit} className="flex items-center text-slate-400 hover:text-white"><ArrowLeft size={20} className="mr-2" /> Lobby</button>
+        <button onClick={onExit} className="flex items-center text-slate-400 hover:text-white">
+          <ArrowLeft size={20} className="mr-2" /> Lobby
+        </button>
         <div className="text-xl font-bold text-yellow-500 tracking-wider">TEXAS HOLD'EM</div>
-        <div className="flex gap-4">
-           <button 
-             onClick={askPitBoss}
-             className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full text-xs font-bold text-white hover:scale-105 transition-transform shadow-[0_0_15px_rgba(124,58,237,0.5)] border border-white/20"
-           >
-             <Sparkles size={14} className="text-yellow-300" /> Ask Pit Boss
-           </button>
-           <div className="flex items-center text-yellow-400 font-mono"><DollarSign size={16} /> Pot: {pot}</div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center bg-[#111827] border border-yellow-500/40 rounded-full px-3 py-1 text-xs font-mono text-yellow-400 shadow-lg">
+            <DollarSign size={14} className="mr-1" />
+            {loadingWallet ? '...' : `${walletBalance.toFixed(2)} LIN`}
+            <button
+              onClick={onRefreshWallet}
+              className="ml-2 text-slate-300 hover:text-white"
+              title="Refresh wallet balance"
+            >
+              <RefreshCw size={14} />
+            </button>
+          </div>
+          <button
+            onClick={askPitBoss}
+            className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full text-xs font-bold text-white hover:scale-105 transition-transform shadow-[0_0_15px_rgba(124,58,237,0.5)] border border-white/20"
+          >
+            <Sparkles size={14} className="text-yellow-300" /> Ask Pit Boss
+          </button>
+          <div className="flex items-center text-yellow-400 font-mono">
+            <DollarSign size={16} /> Pot: {pot}
+          </div>
         </div>
       </div>
 
@@ -399,7 +608,17 @@ const PokerGame = ({ onExit }: { onExit: () => void }) => {
 };
 
 // --- RUMMY GAME (Integrated with Linera) ---
-const RummyGame = ({ onExit }: { onExit: () => void }) => {
+const RummyGame = ({
+  onExit,
+  walletBalance,
+  loadingWallet,
+  onRefreshWallet,
+}: {
+  onExit: () => void;
+  walletBalance: number;
+  loadingWallet: boolean;
+  onRefreshWallet: () => void;
+}) => {
   const { game: lineraGame, profile, loading, actions } = useRummy();
   const [deck, setDeck] = useState<Card[]>([]);
   const [playerHand, setPlayerHand] = useState<Card[]>([]);
@@ -496,14 +715,29 @@ const RummyGame = ({ onExit }: { onExit: () => void }) => {
       {showPitBoss && <PitBossModal onClose={() => setShowPitBoss(false)} advice={pitBossAdvice} />}
 
       <div className="h-14 bg-[#051f15] flex items-center justify-between px-4 shadow-xl z-20">
-         <button onClick={onExit} className="flex items-center text-emerald-100 hover:text-white"><ArrowLeft size={20} className="mr-2" /> Lobby</button>
-         <div className="text-xl font-bold text-yellow-500 tracking-wider">INDIAN RUMMY</div>
-         <button 
-             onClick={askPitBoss}
-             className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full text-xs font-bold text-white hover:scale-105 transition-transform shadow-[0_0_15px_rgba(124,58,237,0.5)] border border-white/20"
-           >
-             <Sparkles size={14} className="text-yellow-300" /> Ask Pit Boss
-         </button>
+        <button onClick={onExit} className="flex items-center text-emerald-100 hover:text-white">
+          <ArrowLeft size={20} className="mr-2" /> Lobby
+        </button>
+        <div className="text-xl font-bold text-yellow-500 tracking-wider">INDIAN RUMMY</div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center bg-[#022c22] border border-yellow-500/40 rounded-full px-3 py-1 text-xs font-mono text-yellow-400 shadow-lg">
+            <DollarSign size={14} className="mr-1" />
+            {loadingWallet ? '...' : `${walletBalance.toFixed(2)} LIN`}
+            <button
+              onClick={onRefreshWallet}
+              className="ml-2 text-emerald-200 hover:text-white"
+              title="Refresh wallet balance"
+            >
+              <RefreshCw size={14} />
+            </button>
+          </div>
+          <button
+            onClick={askPitBoss}
+            className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full text-xs font-bold text-white hover:scale-105 transition-transform shadow-[0_0_15px_rgba(124,58,237,0.5)] border border-white/20"
+          >
+            <Sparkles size={14} className="text-yellow-300" /> Ask Pit Boss
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 relative bg-[url('https://www.transparenttextures.com/patterns/green-felt.png')] flex flex-col justify-between p-4">
@@ -544,6 +778,70 @@ const RummyGame = ({ onExit }: { onExit: () => void }) => {
         <div className="z-10 flex justify-center gap-4 pb-4">
           <button onClick={handleDiscard} disabled={selectedCard === null} className="px-6 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg">Discard</button>
           <button onClick={handleDeclare} className="px-6 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-bold rounded-lg">Declare</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- MODE SELECTION SCREENS ---
+
+const ModeSelectScreen = ({
+  title,
+  description,
+  onBack,
+  onSingle,
+  onMulti,
+  multiEnabled,
+}: {
+  title: string;
+  description: string;
+  onBack: () => void;
+  onSingle: () => void;
+  onMulti: () => void;
+  multiEnabled: boolean;
+}) => {
+  return (
+    <div className="flex flex-col h-screen bg-[#020617] text-slate-100 font-sans">
+      <div className="h-14 bg-[#020617] flex items-center justify-between px-4 shadow-lg border-b border-slate-800">
+        <button onClick={onBack} className="flex items-center text-slate-400 hover:text-white">
+          <ArrowLeft size={20} className="mr-2" /> Lobby
+        </button>
+        <div className="text-lg font-bold text-yellow-400 tracking-widest">{title}</div>
+        <div className="w-16" />
+      </div>
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="max-w-xl w-full bg-slate-900/80 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+          <p className="text-sm text-slate-300 mb-6">{description}</p>
+          <div className="grid md:grid-cols-2 gap-4">
+            <button
+              onClick={onSingle}
+              className="w-full p-4 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-500/40 flex flex-col items-start gap-1 transition-colors"
+            >
+              <span className="text-sm font-semibold text-white">Single Player</span>
+              <span className="text-xs text-emerald-100/80">
+                Play against bots or solo logic using your casino wallet.
+              </span>
+            </button>
+            <button
+              onClick={multiEnabled ? onMulti : undefined}
+              disabled={!multiEnabled}
+              className={`w-full p-4 rounded-xl flex flex-col items-start gap-1 border transition-colors ${
+                multiEnabled
+                  ? 'bg-indigo-900/60 hover:bg-indigo-800 border-indigo-500/40'
+                  : 'bg-slate-800/60 border-slate-700 opacity-60 cursor-not-allowed'
+              }`}
+            >
+              <span className="text-sm font-semibold text-white">
+                Multiplayer {multiEnabled ? '' : '(coming soon)'}
+              </span>
+              <span className="text-xs text-slate-200/80">
+                {multiEnabled
+                  ? 'Create or join lobbies with other local players.'
+                  : 'This mode is not wired to shared lobbies yet.'}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -615,7 +913,7 @@ const FloatingChips = () => {
 };
 
 export default function CasinoRoyale() {
-  const [game, setGame] = useState<'menu' | 'poker' | 'rummy' | 'roulette'>('menu');
+  const [game, setGame] = useState<'menu' | 'pokerMode' | 'pokerSingle' | 'pokerMulti' | 'rummyMode' | 'rummy' | 'rouletteMode' | 'roulette'>('menu');
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [loadingBalance, setLoadingBalance] = useState(false);
 
@@ -627,32 +925,54 @@ export default function CasinoRoyale() {
   const loadWalletBalance = async () => {
     try {
       setLoadingBalance(true);
-      // Try to get balance from any game's profile
+
+      // Read Linera config to locate the Bankroll GraphQL service.
       const response = await fetch('/config.json');
-      if (response.ok) {
-        const config = await response.json();
-        // Query balance from Linera service
-        const graphqlResponse = await fetch(config.nodeServiceURL || 'http://localhost:8081', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: `
-              query {
-                getBalances {
-                  chain
-                  amount
-                }
+      if (!response.ok) {
+        throw new Error('Missing config.json; backend not fully initialised.');
+      }
+      const config = await response.json();
+
+      // Talk directly to the Bankroll application's GraphQL endpoint.
+      // Force all frontends (5173/5174/5175) to use the same node service for
+      // a shared wallet and lobby view.
+      const nodeServiceURL = 'http://localhost:8081';
+      const graphqlEndpoint = `${nodeServiceURL}/chains/${config.defaultChain}/applications/${config.bankrollAppId}`;
+
+      const graphqlResponse = await fetch(graphqlEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `
+            query GetBankrollBalances {
+              getBalances {
+                chain
+                amount
               }
-            `
-          })
-        });
-        if (graphqlResponse.ok) {
-          const data = await graphqlResponse.json();
-          if (data.data?.getBalances && data.data.getBalances.length > 0) {
-            const total = data.data.getBalances.reduce((sum: number, b: any) => sum + Number(b.amount || 0), 0);
-            setWalletBalance(total / 1e9);
-          }
-        }
+            }
+          `,
+        }),
+      });
+
+      if (!graphqlResponse.ok) {
+        const text = await graphqlResponse.text();
+        console.error('loadWalletBalance HTTP error:', text);
+        return;
+      }
+
+      const data = await graphqlResponse.json();
+      console.log('Bankroll getBalances response:', data);
+      if (data.errors) {
+        console.error('loadWalletBalance GraphQL errors:', data.errors);
+        return;
+      }
+
+      if (data.data?.getBalances && data.data.getBalances.length > 0) {
+        const total = data.data.getBalances.reduce(
+          (sum: number, b: any) => sum + Number(b.amount || 0),
+          0
+        );
+        setWalletBalance(total / 1e9);
       }
     } catch (error) {
       console.error('Error loading balance:', error);
@@ -664,38 +984,131 @@ export default function CasinoRoyale() {
   const handleRequestFaucet = async () => {
     try {
       setLoadingBalance(true);
-      // Try faucet endpoint first
-      let response = await fetch('http://localhost:8080/faucet', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+
+      // Read Linera config generated by run.bash
+      const configRes = await fetch('/config.json');
+      if (!configRes.ok) {
+        throw new Error('Missing config.json; backend not fully initialised.');
+      }
+      const config = await configRes.json();
+
+      // We call the same mintToken mutation that run.bash uses,
+      // via the Poker GraphQL service on the master/default chain.
+      const graphqlEndpoint = `${config.nodeServiceURL}/chains/${config.defaultChain}/applications/${config.pokerAppId}`;
+
+      // Mint a small, fixed amount of tokens (in smallest units).
+      // 1e9 = 1 LIN with current Amount scale.
+      const mintAmount = '1000000000';
+      const targetChain = config.userChain1 || config.defaultChain;
+
+      const response = await fetch(graphqlEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `
+            mutation MintFromUi($chainId: String!, $amount: String!) {
+              mintToken(chainId: $chainId, amount: $amount)
+            }
+          `,
+          variables: {
+            chainId: targetChain,
+            amount: mintAmount,
+          },
+        }),
       });
-      
+
       if (!response.ok) {
-        // Try root endpoint
-        response = await fetch('http://localhost:8080', {
-          method: 'GET'
-        });
+        const text = await response.text();
+        console.error('Mint token HTTP error:', text);
+        throw new Error('Mint token request failed');
       }
-      
-      if (response.ok) {
-        alert('Faucet tokens requested! Please wait a moment and refresh your balance.');
-        setTimeout(() => {
-          loadWalletBalance();
-        }, 3000);
-      } else {
-        alert('Faucet request failed. Please use Linera CLI:\n\nlinera wallet request-chain --faucet http://localhost:8080\n\nOr make sure the faucet is running on port 8080.');
+
+      const result = await response.json();
+      if (result.errors) {
+        console.error('Mint token GraphQL errors:', result.errors);
+        throw new Error('Mint token GraphQL error');
       }
+
+      alert('Tokens minted to your casino account! Updating balance…');
+      // Give the network a brief moment, then refresh the displayed balance.
+      setTimeout(() => {
+        loadWalletBalance();
+      }, 1500);
     } catch (error) {
-      console.error('Faucet error:', error);
-      alert('Faucet request failed. Please use Linera CLI:\n\nlinera wallet request-chain --faucet http://localhost:8080\n\nOr make sure the faucet is running on port 8080.');
+      console.error('Faucet / mint error:', error);
+      alert(
+        'Unable to mint tokens from the UI.\n\n' +
+        'Please check that the Linera services are running (docker compose up) and try again.'
+      );
     } finally {
       setLoadingBalance(false);
     }
   };
 
-  if (game === 'poker') return <PokerGame onExit={() => setGame('menu')} />;
-  if (game === 'rummy') return <RummyGame onExit={() => setGame('menu')} />;
-  if (game === 'roulette') return <RouletteGame onExit={() => setGame('menu')} />;
+  if (game === 'pokerSingle')
+    return (
+      <PokerGame
+        onExit={() => setGame('menu')}
+        walletBalance={walletBalance}
+        loadingWallet={loadingBalance}
+        onRefreshWallet={loadWalletBalance}
+      />
+    );
+
+  if (game === 'pokerMulti')
+    return (
+      <PokerLobby
+        onExit={() => setGame('menu')}
+        walletBalance={walletBalance}
+        loadingWallet={loadingBalance}
+        onRefreshWallet={loadWalletBalance}
+      />
+    );
+
+  if (game === 'rummy')
+    return (
+      <RummyGame
+        onExit={() => setGame('menu')}
+        walletBalance={walletBalance}
+        loadingWallet={loadingBalance}
+        onRefreshWallet={loadWalletBalance}
+      />
+    );
+  if (game === 'roulette')
+    return <RouletteGame onExit={() => setGame('menu')} />;
+  if (game === 'pokerMode')
+    return (
+      <ModeSelectScreen
+        title="Poker"
+        description="Choose how you want to play Texas Hold'em."
+        onBack={() => setGame('menu')}
+        onSingle={() => setGame('pokerSingle')}
+        onMulti={() => setGame('pokerMulti')}
+        multiEnabled={true}
+      />
+    );
+  if (game === 'rummyMode')
+    return (
+      <ModeSelectScreen
+        title="Rummy"
+        description="Indian Rummy with shared casino wallet."
+        onBack={() => setGame('menu')}
+        onSingle={() => setGame('rummy')}
+        onMulti={() => {}}
+        multiEnabled={false}
+      />
+    );
+  if (game === 'rouletteMode')
+    return (
+      <ModeSelectScreen
+        title="Roulette"
+        description="Spin the wheel of fortune."
+        onBack={() => setGame('menu')}
+        onSingle={() => setGame('roulette')}
+        onMulti={() => {}}
+        multiEnabled={false}
+      />
+    );
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans overflow-hidden relative selection:bg-yellow-500/30">
@@ -756,7 +1169,7 @@ export default function CasinoRoyale() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12 w-full max-w-7xl">
             
             <div 
-              onClick={() => setGame('poker')}
+              onClick={() => setGame('pokerMode')}
               className="group relative h-[450px] w-full bg-[#121212] rounded-[24px] border border-white/5 cursor-pointer transition-all duration-500 hover:-translate-y-4 hover:shadow-[0_0_50px_rgba(16,185,129,0.3)] overflow-hidden flex flex-col backdrop-blur-sm bg-opacity-80"
             >
               <div className="h-2/3 bg-gradient-to-br from-emerald-900 via-emerald-950 to-black relative overflow-hidden">
@@ -787,7 +1200,7 @@ export default function CasinoRoyale() {
             </div>
 
             <div 
-              onClick={() => setGame('rummy')}
+              onClick={() => setGame('rummyMode')}
               className="group relative h-[450px] w-full bg-[#121212] rounded-[24px] border border-white/5 cursor-pointer transition-all duration-500 hover:-translate-y-4 hover:shadow-[0_0_50px_rgba(99,102,241,0.3)] overflow-hidden flex flex-col backdrop-blur-sm bg-opacity-80"
             >
               <div className="h-2/3 bg-gradient-to-br from-indigo-900 via-indigo-950 to-black relative overflow-hidden">
@@ -816,7 +1229,7 @@ export default function CasinoRoyale() {
             </div>
 
             <div 
-              onClick={() => setGame('roulette')}
+              onClick={() => setGame('rouletteMode')}
               className="group relative h-[450px] w-full bg-[#121212] rounded-[24px] border border-white/5 cursor-pointer transition-all duration-500 hover:-translate-y-4 hover:shadow-[0_0_50px_rgba(239,68,68,0.3)] overflow-hidden flex flex-col backdrop-blur-sm bg-opacity-80"
             >
               <div className="h-2/3 bg-gradient-to-br from-red-900 via-red-950 to-black relative overflow-hidden">

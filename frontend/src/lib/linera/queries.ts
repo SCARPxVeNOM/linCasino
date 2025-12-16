@@ -37,11 +37,20 @@ export const GET_POKER_MULTI_PLAYER_DATA = gql`
           currentBet
           isFolded
           isActive
+          isAllIn
         }
         communityCards
         pot
         currentRound
         status
+        dealerPosition
+        smallBlind
+        bigBlind
+        currentBet
+        currentPlayer
+        handId
+        minRaise
+        actionDeadlineMicros
       }
     }
   }
@@ -60,6 +69,22 @@ export const GET_POKER_PROFILE = gql`
           text
           enable
         }
+      }
+    }
+  }
+`;
+
+export const GET_POKER_LOBBIES = gql`
+  query GetPokerLobbies {
+    openLobbies {
+      id
+      hostChain
+      createdAtMicros
+      maxPlayers
+      started
+      players {
+        chainId
+        name
       }
     }
   }

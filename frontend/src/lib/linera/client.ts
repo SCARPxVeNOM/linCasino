@@ -26,8 +26,10 @@ export function initializeLineraClient(lineraConfig: LineraConfig) {
   config = lineraConfig;
   
   // Create separate clients for each game with their specific application endpoints
+  // For local multiplayer, force all frontends (5173/5174/5175) to talk to the
+  // same node service so they share lobbies and state.
   // Format: http://localhost:8081/chains/{chainId}/applications/{appId}
-  const baseURL = lineraConfig.nodeServiceURL;
+  const baseURL = 'http://localhost:8081';
   const chainId = lineraConfig.defaultChain;
   
   // Poker client

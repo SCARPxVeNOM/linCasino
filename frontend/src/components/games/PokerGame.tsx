@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { usePoker } from '../../lib/games/poker';
-import { ArrowLeft, DollarSign, Users, User } from 'lucide-react';
+import { ArrowLeft, Users, User } from 'lucide-react';
 import './Game.css';
 
 type GameMode = 'single' | 'multi';
 
 export default function PokerGame({ onExit }: { onExit: () => void }) {
-  const { game, profile, loading, actions } = usePoker();
   const [gameMode, setGameMode] = useState<GameMode | null>(() => {
     const saved = localStorage.getItem('poker_game_mode');
     return (saved as GameMode) || null;
   });
+  const { game, multiGame, profile, loading, lobbies, actions } = usePoker(gameMode ?? 'single');
   const [playerName, setPlayerName] = useState('');
   const [betAmount, setBetAmount] = useState('');
+  const [multiBetAmount, setMultiBetAmount] = useState('');
+  const [multiSeatId, setMultiSeatId] = useState('');
 
   // Save game mode to localStorage
   useEffect(() => {
@@ -35,6 +37,16 @@ export default function PokerGame({ onExit }: { onExit: () => void }) {
   const handleGetBalance = async () => {
     await actions.getBalance();
   };
+
+  // Simple heartbeat while in multiplayer mode and table is active
+  useEffect(() => {
+    if (gameMode !== 'multi') return;
+    if (!multiGame) return;
+    const id = setInterval(() => {
+      actions.sendHeartbeat();
+    }, 5000);
+    return () => clearInterval(id);
+  }, [gameMode, multiGame, actions]);
 
   const handleRequestFaucet = async () => {
     try {
@@ -146,7 +158,7 @@ export default function PokerGame({ onExit }: { onExit: () => void }) {
           )}
         </div>
 
-        {!game && (
+        {gameMode === 'single' && !game && (
           <div className="start-game-section">
             <h3>Start New Game</h3>
             <input
@@ -164,91 +176,238 @@ export default function PokerGame({ onExit }: { onExit: () => void }) {
       </div>
 
       <div className="game-main">
-        {game ? (
+        {gameMode === 'single' && (
           <>
-            <div className="game-status">
-              <h2>Status: {game.status}</h2>
-              <p>Round: {game.currentRound}</p>
-              <p>Pot: {(Number(game.pot) / 1e9).toFixed(2)} LIN</p>
-            </div>
+            {game ? (
+              <>
+                <div className="game-status">
+                  <h2>Status: {game.status}</h2>
+                  <p>Round: {game.currentRound}</p>
+                  <p>Pot: {(Number(game.pot) / 1e9).toFixed(2)} LIN</p>
+                </div>
 
-            <div className="community-cards">
-              <h3>Community Cards</h3>
-              <div className="cards-display">
-                {game.communityCards && game.communityCards.length > 0 ? (
-                  game.communityCards.map((card, idx) => (
-                    <div key={idx} className="card">
-                      {card}
-                    </div>
-                  ))
-                ) : (
-                  <p>No community cards yet</p>
-                )}
-              </div>
-            </div>
-
-            <div className="players-section">
-              <h3>Players</h3>
-              {game.players && game.players.length > 0 ? (
-                <div className="players-list">
-                  {game.players.map((player, idx) => (
-                    <div key={idx} className="player-card">
-                      <h4>{player.name || `Player ${idx + 1}`}</h4>
-                      <p>Chips: {(Number(player.chips) / 1e9).toFixed(2)} LIN</p>
-                      <p>Current Bet: {(Number(player.currentBet) / 1e9).toFixed(2)} LIN</p>
-                      <p>Status: {player.isFolded ? 'Folded' : player.isActive ? 'Active' : 'Inactive'}</p>
-                      {player.holeCards && player.holeCards.length > 0 && (
-                        <div className="hole-cards">
-                          {player.holeCards.map((card, cIdx) => (
-                            <span key={cIdx} className="card-small">{card}</span>
-                          ))}
+                <div className="community-cards">
+                  <h3>Community Cards</h3>
+                  <div className="cards-display">
+                    {game.communityCards && game.communityCards.length > 0 ? (
+                      game.communityCards.map((card, idx) => (
+                        <div key={idx} className="card">
+                          {card}
                         </div>
-                      )}
+                      ))
+                    ) : (
+                      <p>No community cards yet</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="players-section">
+                  <h3>Players</h3>
+                  {game.players && game.players.length > 0 ? (
+                    <div className="players-list">
+                      {game.players.map((player, idx) => (
+                        <div key={idx} className="player-card">
+                          <h4>{player.name || `Player ${idx + 1}`}</h4>
+                          <p>Chips: {(Number(player.chips) / 1e9).toFixed(2)} LIN</p>
+                          <p>Current Bet: {(Number(player.currentBet) / 1e9).toFixed(2)} LIN</p>
+                          <p>Status: {player.isFolded ? 'Folded' : player.isActive ? 'Active' : 'Inactive'}</p>
+                          {player.holeCards && player.holeCards.length > 0 && (
+                            <div className="hole-cards">
+                              {player.holeCards.map((card, cIdx) => (
+                                <span key={cIdx} className="card-small">{card}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No players in game</p>
+                  )}
+                </div>
+
+                <div className="game-actions">
+                  <h3>Actions</h3>
+                  <div className="actions-grid">
+                    <input
+                      type="number"
+                      placeholder="Bet amount"
+                      value={betAmount}
+                      onChange={(e) => setBetAmount(e.target.value)}
+                      className="input-field"
+                    />
+                    <button
+                      onClick={() => {
+                        if (betAmount) {
+                          actions.bet(betAmount);
+                          setBetAmount('');
+                        }
+                      }}
+                      className="action-button"
+                    >
+                      Bet
+                    </button>
+                    <button onClick={() => actions.call()} className="action-button">
+                      Call
+                    </button>
+                    <button onClick={() => actions.raise(betAmount || '0')} className="action-button">
+                      Raise
+                    </button>
+                    <button onClick={() => actions.fold()} className="action-button danger">
+                      Fold
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="no-game">
+                <p>Start a new game to begin playing!</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {gameMode === 'multi' && (
+          <>
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold">Open Lobbies</h3>
+                <button
+                  onClick={() => {
+                    if (playerName.trim()) {
+                      actions.sitAtTable(playerName.trim());
+                    }
+                  }}
+                  className="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-700"
+                >
+                  Sit at Table
+                </button>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Open Lobbies</h3>
+              {lobbies.length === 0 ? (
+                <p className="text-slate-400 text-sm">No open lobbies yet. Create one from another chain or play-chain.</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {lobbies.map((lobby: any) => (
+                    <div key={lobby.id} className="bg-slate-800/60 rounded p-2 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="font-semibold">{lobby.id}</div>
+                        <div className="text-slate-400">
+                          {lobby.players.length}/{lobby.maxPlayers} players
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p>No players in game</p>
               )}
             </div>
 
-            <div className="game-actions">
-              <h3>Actions</h3>
-              <div className="actions-grid">
-                <input
-                  type="number"
-                  placeholder="Bet amount"
-                  value={betAmount}
-                  onChange={(e) => setBetAmount(e.target.value)}
-                  className="input-field"
-                />
-                <button
-                  onClick={() => {
-                    if (betAmount) {
-                      actions.bet(betAmount);
-                      setBetAmount('');
-                    }
-                  }}
-                  className="action-button"
-                >
-                  Bet
-                </button>
-                <button onClick={() => actions.call()} className="action-button">
-                  Call
-                </button>
-                <button onClick={() => actions.raise(betAmount || '0')} className="action-button">
-                  Raise
-                </button>
-                <button onClick={() => actions.fold()} className="action-button danger">
-                  Fold
-                </button>
+            {multiGame ? (
+              <>
+                <div className="game-status">
+                  <h2>Multiplayer Status: {multiGame.status}</h2>
+                  <p>Round: {multiGame.currentRound}</p>
+                  <p>Pot: {Number(multiGame.pot).toString()} units</p>
+                  <p>Current Player: {multiGame.currentPlayer ?? 'N/A'}</p>
+                </div>
+
+                <div className="community-cards">
+                  <h3>Community Cards</h3>
+                  <div className="cards-display">
+                    {multiGame.communityCards && multiGame.communityCards.length > 0 ? (
+                      multiGame.communityCards.map((card: number, idx: number) => (
+                        <div key={idx} className="card">
+                          {card}
+                        </div>
+                      ))
+                    ) : (
+                      <p>No community cards yet</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="players-section">
+                  <h3>Players</h3>
+                  {multiGame.players && multiGame.players.length > 0 ? (
+                    <div className="players-list">
+                      {multiGame.players.map((player: any, idx: number) => (
+                        <div key={idx} className="player-card">
+                          <h4>{player.name || `Player ${idx + 1}`}</h4>
+                          <p>Chips: {Number(player.chips).toString()}</p>
+                          <p>Current Bet: {Number(player.currentBet).toString()}</p>
+                          <p>Status: {player.isFolded ? 'Folded' : player.isAllIn ? 'All-in' : player.isActive ? 'Active' : 'Inactive'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No players seated</p>
+                  )}
+                </div>
+
+                <div className="game-actions">
+                  <h3>Your Actions</h3>
+                  <div className="actions-grid">
+                    <input
+                      type="number"
+                      placeholder="Your seat id"
+                      value={multiSeatId}
+                      onChange={(e) => setMultiSeatId(e.target.value)}
+                      className="input-field"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Bet / Raise amount"
+                      value={multiBetAmount}
+                      onChange={(e) => setMultiBetAmount(e.target.value)}
+                      className="input-field"
+                    />
+                    <button
+                      className="action-button"
+                      onClick={() => {
+                        if (!multiSeatId || !multiBetAmount) return;
+                        actions.playerAction({
+                          seatId: Number(multiSeatId),
+                          action: 'Bet',
+                          amount: multiBetAmount,
+                        });
+                        setMultiBetAmount('');
+                      }}
+                    >
+                      Bet / Raise
+                    </button>
+                    <button
+                      className="action-button"
+                      onClick={() => {
+                        if (!multiSeatId) return;
+                        actions.playerAction({
+                          seatId: Number(multiSeatId),
+                          action: 'Call',
+                        });
+                      }}
+                    >
+                      Call
+                    </button>
+                    <button
+                      className="action-button danger"
+                      onClick={() => {
+                        if (!multiSeatId) return;
+                        actions.playerAction({
+                          seatId: Number(multiSeatId),
+                          action: 'Fold',
+                        });
+                      }}
+                    >
+                      Fold
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="no-game">
+                <p>Join a lobby from another chain and the table state will appear here.</p>
               </div>
-            </div>
+            )}
           </>
-        ) : (
-          <div className="no-game">
-            <p>Start a new game to begin playing!</p>
-          </div>
         )}
       </div>
     </div>

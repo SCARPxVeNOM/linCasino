@@ -1,5 +1,5 @@
 use abi::bet_chip_profile::Profile;
-use abi::poker::{PokerGame, UserStatus};
+use abi::poker::{PokerGame, PokerLobby, UserStatus};
 use linera_sdk::linera_base_types::{Amount, ChainId};
 use linera_sdk::views::{linera_views, MapView, RegisterView, RootView, ViewStorageContext};
 
@@ -22,5 +22,7 @@ pub struct PokerState {
     pub single_player_game: RegisterView<PokerGame>,
     // Play Chain
     pub game: RegisterView<PokerGame>,
+    // Simple multiplayer lobbies (stored on the master / default chain)
+    pub lobbies: MapView<String, PokerLobby>,
 }
 
