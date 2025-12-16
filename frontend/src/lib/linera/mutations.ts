@@ -49,6 +49,12 @@ export const POKER_JOIN_LOBBY = gql`
   }
 `;
 
+export const POKER_START_LOBBY = gql`
+  mutation PokerStartLobby($lobbyId: String!) {
+    startLobby(lobbyId: $lobbyId)
+  }
+`;
+
 export const POKER_CREATE_TABLE = gql`
   mutation PokerCreateTable($smallBlind: String!, $bigBlind: String!, $maxPlayers: Int!) {
     createTable(smallBlind: $smallBlind, bigBlind: $bigBlind, maxPlayers: $maxPlayers)

@@ -210,7 +210,7 @@ const PokerLobby = ({
   loadingWallet: boolean;
   onRefreshWallet: () => void;
 }) => {
-  const { lobbies, loading, actions } = usePoker();
+  const { lobbies, loading, actions, config } = usePoker();
   const [playerName, setPlayerName] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [joinId, setJoinId] = useState('');
@@ -251,6 +251,16 @@ const PokerLobby = ({
       await navigator.clipboard.writeText(id);
     } catch {
       // Clipboard might not be available; ignore.
+    }
+  };
+
+  const handleStartLobby = async (lobbyId: string) => {
+    try {
+      setStatus('Starting game...');
+      await actions.startLobby(lobbyId);
+      setStatus('Game started!');
+    } catch (e) {
+      setStatus('Failed to start game.');
     }
   };
 
@@ -337,42 +347,65 @@ const PokerLobby = ({
             )}
             {(lobbies || []).map((lobby: any) => {
               const playerCount = lobby.players?.length || 0;
+              const isFull = playerCount >= lobby.maxPlayers;
               const youHere =
                 playerName &&
                 (lobby.players || []).some((p: any) => (p?.name || '').toLowerCase() === playerName.toLowerCase());
+              
+              // Check if current user is the creator (host)
+              const currentChainId = config?.defaultChain || config?.userChain1 || '';
+              const isCreator = lobby.hostChain === currentChainId;
+              const canStart = isCreator && isFull && !lobby.started;
 
               return (
-                <button
-                  type="button"
+                <div
                   key={lobby.id}
-                  onClick={() => handleSelectLobby(lobby.id)}
-                  className="w-full text-left border border-slate-700 rounded-xl px-3 py-2 bg-slate-950/60 flex flex-col gap-1 hover:border-yellow-500/60 hover:bg-slate-900/80 transition-colors"
+                  className="w-full border border-slate-700 rounded-xl px-3 py-2 bg-slate-950/60 flex flex-col gap-1"
                 >
-                  <div className="flex justify-between items-center">
-                    <div className="font-mono text-[11px] text-yellow-400 truncate max-w-[230px]">
-                      ID: {lobby.id}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectLobby(lobby.id)}
+                    className="text-left flex flex-col gap-1 hover:opacity-80 transition-opacity"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="font-mono text-[11px] text-yellow-400 truncate max-w-[230px]">
+                        ID: {lobby.id}
+                      </div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                        {youHere && <span className="text-emerald-400 font-semibold">You're in</span>}
+                        <span>
+                          {playerCount}/{lobby.maxPlayers} players
+                        </span>
+                        {lobby.started && <span className="text-green-400 font-semibold">Started</span>}
+                      </div>
                     </div>
-                    <div className="text-[10px] text-slate-400 flex items-center gap-2">
-                      {youHere && <span className="text-emerald-400 font-semibold">You’re in</span>}
-                      <span>
-                        {playerCount}/{lobby.maxPlayers} players
-                      </span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {(lobby.players || []).map((p: any) => (
+                        <span
+                          key={p.chainId + p.name}
+                          className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] text-slate-200"
+                        >
+                          {p.name || 'Player'}
+                        </span>
+                      ))}
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {(lobby.players || []).map((p: any) => (
-                      <span
-                        key={p.chainId + p.name}
-                        className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] text-slate-200"
-                      >
-                        {p.name || 'Player'}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-1 text-[10px] text-slate-500">
-                    Click to copy ID &ndash; paste or press “Join Lobby” on another tab.
-                  </div>
-                </button>
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      Click to copy ID &ndash; paste or press "Join Lobby" on another tab.
+                    </div>
+                  </button>
+                  {canStart && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartLobby(lobby.id);
+                      }}
+                      className="mt-2 w-full px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg"
+                    >
+                      🎮 Start Game
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>

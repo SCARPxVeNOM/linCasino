@@ -40,6 +40,7 @@ pub enum PokerOperation {
     // Simple lobby operations (master/default chain)
     CreateLobby { max_players: u8 },
     JoinLobby { lobby_id: String, name: String },
+    StartLobby { lobby_id: String },
 
     // * Master Chain
     AddPlayChain { target_public_chain: ChainId, play_chain_id: ChainId },

@@ -15,6 +15,7 @@ import {
   POKER_RAISE,
   POKER_CREATE_LOBBY,
   POKER_JOIN_LOBBY,
+  POKER_START_LOBBY,
   POKER_CREATE_TABLE,
   POKER_SIT,
   POKER_LEAVE,
@@ -145,6 +146,14 @@ export function usePoker(mode: 'single' | 'multi' = 'single') {
           await refetchLobbies();
         } catch (error) {
           console.error('Error joining lobby:', error);
+        }
+      },
+      startLobby: async (lobbyId: string) => {
+        try {
+          await startLobby({ variables: { lobbyId } });
+          await refetchLobbies();
+        } catch (error) {
+          console.error('Error starting lobby:', error);
         }
       },
       // Multiplayer helpers

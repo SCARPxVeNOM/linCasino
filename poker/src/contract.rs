@@ -201,6 +201,50 @@ impl Contract for PokerContract {
                     }
                 }
             }
+            PokerOperation::StartLobby { lobby_id } => {
+                // Only allow starting from the configured master chain.
+                let params = self.runtime.application_parameters();
+                assert_eq!(
+                    self.runtime.chain_id(),
+                    params.master_chain,
+                    "Lobbies can only be started on the master chain"
+                );
+
+                let chain_id = self.runtime.chain_id();
+                if let Some(mut lobby) = self
+                    .state
+                    .lobbies
+                    .get(&lobby_id)
+                    .await
+                    .expect("Failed to read lobby")
+                {
+                    // Only the host (creator) can start the game
+                    if lobby.host_chain != chain_id {
+                        log::warn!("Only the lobby host can start the game");
+                        return;
+                    }
+                    
+                    // Check if lobby is full and not already started
+                    if lobby.started {
+                        log::warn!("Lobby already started");
+                        return;
+                    }
+                    
+                    if lobby.players.len() < lobby.max_players as usize {
+                        log::warn!("Lobby is not full yet. Need {}/{} players", lobby.players.len(), lobby.max_players);
+                        return;
+                    }
+                    
+                    // Mark lobby as started
+                    lobby.started = true;
+                    self.state
+                        .lobbies
+                        .insert(&lobby_id, lobby)
+                        .unwrap_or_else(|_| panic!("Failed to update lobby {}", lobby_id));
+                    
+                    log::info!("Lobby {} started by host", lobby_id);
+                }
+            }
             // Multiplayer table operations
             PokerOperation::CreateTable { small_blind, big_blind, max_players: _ } => {
                 // Initialize the authoritative table on this (play) chain.
