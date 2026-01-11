@@ -14,3 +14,20 @@ frontend/dist/
 .env
 .env.local
 
+# Linera protocol (large dependency, should be cloned separately)
+linera-protocol/
+
+# Temporary scripts
+*.sh
+*.ps1
+!run.bash
+
+# Croissant build artifacts
+croissant/node_modules/
+croissant/wasm-client/dist/
+croissant/web/dist/
+croissant/.pnpm-store/
+
+# Testnet data
+/tmp/linera_testnet/
+

@@ -7,11 +7,17 @@ members = [
     "rummy",
     "roulette",
 ]
+exclude = [
+    "croissant",
+    "croissant/wasm-client",
+]
 
 [workspace.dependencies]
 async-graphql = { version = "=7.0.17", default-features = false }
 async-graphql-derive = { version = "=7.0.17", default-features = false }
-linera-sdk = { version = "0.15.6" }
+async-graphql-value = { version = "=7.0.17" }
+async-graphql-parser = { version = "=7.0.17" }
+linera-sdk = { version = "0.15.7" }
 futures = { version = "0.3" }
 getrandom = { version = "0.2.15", default-features = false, features = ["custom"] }
 log = { version = "0.4.27" }

@@ -4,9 +4,20 @@ This guide explains how to deploy the Linera Casino application.
 
 ## Prerequisites
 
-1. Install Linera CLI tools
+1. Install Linera CLI tools (version 0.15.7 to match Testnet Conway)
 2. Install Rust with `wasm32-unknown-unknown` target
 3. Install Node.js and npm
+
+**Important**: Make sure your Linera CLI version matches the testnet version (0.15.7). You can check your version with:
+```bash
+linera --version
+```
+
+If you need to update, install the correct version:
+```bash
+cargo install --locked linera-service@0.15.7
+cargo install --locked linera-storage-service@0.15.7
+```
 
 ## Build Steps
 
@@ -24,11 +35,14 @@ cargo build -p rummy --release --target wasm32-unknown-unknown
 cargo build -p roulette --release --target wasm32-unknown-unknown
 ```
 
-### 2. Start Linera Network
+### 2. Connect to Testnet Conway
 
-```bash
-linera net up --initial-amount 1000000000000 --with-faucet
+The project is configured to connect to Testnet Conway. The deployment script (`run.bash`) uses the testnet faucet at:
 ```
+https://faucet.testnet-conway.linera.net/
+```
+
+No local network setup is required - the script will automatically connect to the testnet when deploying.
 
 ### 3. Deploy Applications
 

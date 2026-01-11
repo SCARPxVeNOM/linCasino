@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 abi.workspace = true
 async-graphql.workspace = true
+async-graphql-value.workspace = true
+async-graphql-parser.workspace = true
 log.workspace = true
 linera-sdk.workspace = true
 futures.workspace = true

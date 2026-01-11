@@ -14,18 +14,34 @@ FLUTTER_WEB_PORT_B=5174
 FLUTTER_WEB_PORT_C=5175
 LINERA_MAX_PENDING_MESSAGES=100
 
-export PATH="$PWD/target/debug:$PATH"
-source /dev/stdin <<<"$(linera net helper 2>/dev/null)"
-linera_spawn linera net up --initial-amount 1000000000000 --with-faucet --faucet-port $FAUCET_PORT --faucet-amount 1000000000
+# Add cargo bin directory to PATH (where linera is installed)
+export PATH="$HOME/.cargo/bin:$PWD/target/debug:$PATH"
 
-sleep 10
+# Verify linera is available
+if ! command -v linera &> /dev/null; then
+    echo "Error: linera command not found!"
+    echo "Please install Linera CLI tools first:"
+    echo "  cargo install --locked linera-service@0.15.7"
+    echo "  cargo install --locked linera-storage-service@0.15.7"
+    exit 1
+fi
 
 # -----------------------------------------------------------------------------------------------------------------
-# Build and publish your backend
+# Connect to Testnet Conway
 # -----------------------------------------------------------------------------------------------------------------
 
-FAUCET_URL=http://localhost:$FAUCET_PORT
+# Use Testnet Conway faucet instead of local network
+FAUCET_URL=https://faucet.testnet-conway.linera.net/
 GRAPHQL_URL=http://localhost:$LINERA_SERVICE_PORT_A
+
+# Set temporary directory for wallets and storage (if not already set)
+if [ -z "${LINERA_TMP_DIR:-}" ]; then
+  export LINERA_TMP_DIR="${TMPDIR:-/tmp}/linera_testnet"
+  mkdir -p "$LINERA_TMP_DIR"
+fi
+
+echo "Connecting to Testnet Conway at $FAUCET_URL"
+echo "Using temporary directory: $LINERA_TMP_DIR"
 
 PUBLIC_CHAIN_AMOUNT=1
 PLAY_CHAIN_AMOUNT_FOR_EACH_PUBLIC_CHAIN=1
@@ -52,6 +68,16 @@ initiate_new_wallet_from_faucet() {
   if [ -z "$1" ]; then
     echo "Error: Missing required parameter <Wallet_Number>. Usage: initiate_new_wallet_from_faucet <Wallet_Number>"
     exit 1
+  fi
+
+  # Check if keystore already exists
+  WALLET_VAR="LINERA_KEYSTORE_$1"
+  KEYSTORE_PATH="${!WALLET_VAR}"
+  
+  if [ -f "$KEYSTORE_PATH" ]; then
+    echo "Keystore for wallet $1 already exists at $KEYSTORE_PATH"
+    echo "Skipping wallet initialization (using existing wallet)"
+    return 0
   fi
 
   linera --with-wallet "$1" wallet init --faucet "$FAUCET_URL"

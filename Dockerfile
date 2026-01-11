@@ -18,8 +18,8 @@ ENV CARGO_BUILD_JOBS=1
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 # Install services separately to reduce memory pressure
-RUN cargo install --locked linera-storage-service@0.15.6
-RUN cargo install --locked linera-service@0.15.6
+RUN cargo install --locked linera-storage-service@0.15.7
+RUN cargo install --locked linera-service@0.15.7
 
 RUN apt-get install -y curl
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \

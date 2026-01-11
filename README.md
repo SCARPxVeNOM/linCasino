@@ -14,6 +14,7 @@ Linera Casino demonstrates a production-ready multi-chain gaming platform where 
 - **💰 Integrated Bankroll System**: Unified token management across all games with balance synchronization
 - **⚡ Real-Time Updates**: GraphQL-based state synchronization with polling for live game state
 - **🔄 Robust Reconnection**: Automatic state recovery and seamless reconnection after disconnects
+- **🥐 Croissant Integration**: Supports Croissant browser extension for seamless wallet management on Testnet Conway
 
 ## 🏗️ Architecture
 
@@ -107,7 +108,8 @@ linCasino/
 - **Docker Desktop** (for containerized deployment)
 - **Node.js** LTS (18.x or higher) - for frontend development
 - **Rust** 1.86.0+ (for contract development)
-- **Linera SDK** 0.15.6
+- **Linera SDK** 0.15.7 (must match Testnet Conway version)
+- **pnpm** (for Croissant extension - optional but recommended)
 
 ### Option 1: Docker Deployment (Recommended)
 
@@ -148,12 +150,13 @@ linCasino/
    cargo build --release --target wasm32-unknown-unknown
    ```
 
-2. **Deploy to Linera network**:
+2. **Deploy to Linera Testnet Conway**:
    ```bash
    bash run.bash
    ```
+   The script automatically connects to Testnet Conway at `https://faucet.testnet-conway.linera.net/`
 
-3. **Start frontend development server**:
+3. **Start frontend development server*
    ```bash
    cd frontend
    npm install
@@ -355,7 +358,7 @@ mutation Heartbeat($tableChain: String!) {
 ### Dependencies
 
 **Backend**:
-- `linera-sdk`: 0.15.6
+- `linera-sdk`: 0.15.7
 - `async-graphql`: 7.0.17
 - `serde`: 1.0.228
 
