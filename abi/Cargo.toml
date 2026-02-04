@@ -13,6 +13,7 @@ getrandom.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10.9"
 
 [dev-dependencies]
 linera-sdk = { workspace = true, features = ["test"] }

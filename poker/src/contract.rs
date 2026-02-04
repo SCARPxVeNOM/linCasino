@@ -8,6 +8,7 @@ use abi::poker::{
     DEFAULT_ACTION_TIMEOUT_MICROS,
 };
 use abi::deck::{get_new_deck, Deck};
+use abi::provably_fair::ProvablyFairRNG;
 use bankroll::{BankrollOperation, BankrollResponse};
 use linera_sdk::{
     linera_base_types::WithContractAbi,
@@ -69,9 +70,20 @@ impl Contract for PokerContract {
             }
             PokerOperation::StartSinglePlayerGame { name } => {
                 let mut game = PokerGame::new(10, 20);
-                let timestamp = self.runtime.system_time().to_string();
-                let mut deck = Deck::with_cards(get_new_deck(timestamp.clone()));
-                deck.shuffle(timestamp.clone(), timestamp);
+                let timestamp = self.runtime.system_time();
+                let chain_id_str = format!("{:?}", self.runtime.chain_id());
+                
+                // Create provably fair RNG for deck shuffling
+                let server_seed = format!("{}-{}-poker", chain_id_str, timestamp.micros());
+                let client_seed = format!("player-{}", name);
+                let (mut rng, original_seed) = ProvablyFairRNG::new(&server_seed);
+                rng.set_client_seed(client_seed.clone());
+                game.client_seed = Some(client_seed);
+                
+                // Create and shuffle deck using provably fair method
+                let mut deck = Deck::with_cards(get_new_deck(timestamp.to_string()));
+                // Use the original seed for shuffling (will be revealed after game for verification)
+                deck.shuffle(original_seed.clone(), rng.client_seed.clone());
                 game.deck = deck;
                 
                 // Add player to game
@@ -633,6 +645,10 @@ impl PokerContract {
     fn handle_showdown(&mut self, game: &mut PokerGame) {
         use abi::poker::evaluate_hand;
 
+        // Collect rake before distributing pot
+        let rake = game.collect_rake();
+        log::info!("Rake collected: {} chips", rake);
+
         let mut best_score = 0u32;
         let mut best_index: Option<usize> = None;
 
@@ -647,9 +663,38 @@ impl PokerContract {
             }
         }
 
-        if let Some(winner) = best_index {
+        // Check if we have side pots
+        if !game.side_pots.is_empty() {
+            // Distribute side pots - pass evaluator that takes player IDs and returns winner IDs
+            let players_snapshot: Vec<(u8, Vec<u8>)> = game.players.iter()
+                .filter(|p| !p.is_folded)
+                .map(|p| (p.id, p.hole_cards.clone()))
+                .collect();
+            let community_cards = game.community_cards.clone();
+            
+            game.distribute_side_pots(|eligible_ids: &[u8]| -> Vec<u8> {
+                let mut best_score = 0u32;
+                let mut winners = Vec::new();
+                
+                for &pid in eligible_ids {
+                    if let Some((_, hole_cards)) = players_snapshot.iter().find(|(id, _)| *id == pid) {
+                        let (score, _) = evaluate_hand(hole_cards, &community_cards);
+                        if score > best_score {
+                            best_score = score;
+                            winners.clear();
+                            winners.push(pid);
+                        } else if score == best_score {
+                            winners.push(pid);
+                        }
+                    }
+                }
+                winners
+            });
+        } else if let Some(winner) = best_index {
+            // Simple pot distribution
             if let Some(player) = game.players.get_mut(winner) {
                 player.chips = player.chips.saturating_add(game.pot);
+                log::info!("Player {} wins {} chips", winner, game.pot);
             }
         }
     }

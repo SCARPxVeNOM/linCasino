@@ -35,6 +35,8 @@ pub enum RouletteOperation {
     Spin {},
     StartSinglePlayerGame { name: String },
     ExitSinglePlayerGame {},
+    /// Set client seed for provably fair spin
+    SetClientSeed { seed: String },
 
     // * Master Chain
     AddPlayChain { target_public_chain: ChainId, play_chain_id: ChainId },

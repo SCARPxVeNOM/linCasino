@@ -66,6 +66,54 @@ pub enum ActionKind {
     AllIn,
 }
 
+scalar!(AutoAction);
+/// Auto-actions for disconnected or away players
+#[derive(Debug, Clone, Default, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize)]
+pub enum AutoAction {
+    #[default]
+    None,
+    AutoFold,
+    AutoCheckFold,
+    AutoCallAny,
+}
+
+/// Session statistics for a player at the table
+#[derive(Debug, Clone, Default, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize, SimpleObject)]
+pub struct SessionStats {
+    pub hands_played: u64,
+    pub hands_won: u64,
+    pub total_wagered: u64,
+    pub total_won: u64,
+    pub biggest_pot_won: u64,
+}
+
+impl SessionStats {
+    pub fn record_hand(&mut self, wagered: u64, won: u64) {
+        self.hands_played += 1;
+        self.total_wagered += wagered;
+        self.total_won += won;
+        if won > 0 {
+            self.hands_won += 1;
+            self.biggest_pot_won = self.biggest_pot_won.max(won);
+        }
+    }
+
+    pub fn profit(&self) -> i64 {
+        self.total_won as i64 - self.total_wagered as i64
+    }
+}
+
+/// Side pot for all-in scenarios
+#[derive(Debug, Clone, Default, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize, SimpleObject)]
+pub struct SidePot {
+    /// Amount in this pot
+    pub amount: u64,
+    /// Player IDs eligible to win this pot
+    pub eligible_players: Vec<u8>,
+    /// The contribution level for this pot
+    pub contribution_level: u64,
+}
+
 #[derive(Debug, Clone, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize, SimpleObject)]
 pub struct PokerPlayer {
     pub id: u8,
@@ -76,6 +124,14 @@ pub struct PokerPlayer {
     pub is_folded: bool,
     pub is_active: bool,
     pub is_all_in: bool,
+    /// Player is temporarily sitting out
+    pub is_sitting_out: bool,
+    /// Auto-action for when player's turn arrives
+    pub auto_action: AutoAction,
+    /// Session statistics
+    pub session_stats: SessionStats,
+    /// Player's chain ID for cross-chain messaging
+    pub chain_id: Option<ChainId>,
 }
 
 impl PokerPlayer {
@@ -89,9 +145,40 @@ impl PokerPlayer {
             is_folded: false,
             is_active: true,
             is_all_in: false,
+            is_sitting_out: false,
+            auto_action: AutoAction::None,
+            session_stats: SessionStats::default(),
+            chain_id: None,
         }
     }
+
+    pub fn with_chain_id(mut self, chain_id: ChainId) -> Self {
+        self.chain_id = Some(chain_id);
+        self
+    }
+
+    pub fn set_auto_action(&mut self, action: AutoAction) {
+        self.auto_action = action;
+    }
+
+    pub fn sit_out(&mut self) {
+        self.is_sitting_out = true;
+    }
+
+    pub fn sit_in(&mut self) {
+        self.is_sitting_out = false;
+    }
+
+    /// Check if player can act (not folded, not all-in, not sitting out)
+    pub fn can_act(&self) -> bool {
+        !self.is_folded && !self.is_all_in && self.is_active && !self.is_sitting_out
+    }
 }
+
+/// Default rake percentage (5%)
+pub const DEFAULT_RAKE_PERCENT: u8 = 5;
+/// Default rake cap (500 units)
+pub const DEFAULT_RAKE_CAP: u64 = 500;
 
 #[derive(Debug, Clone, Default, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize, SimpleObject)]
 pub struct PokerGame {
@@ -112,6 +199,16 @@ pub struct PokerGame {
     pub min_raise: u64,
     /// Deadline (in microseconds since epoch) for the current player to act.
     pub action_deadline_micros: u64,
+    /// Side pots for all-in scenarios
+    pub side_pots: Vec<SidePot>,
+    /// Total rake collected this session
+    pub rake_collected: u64,
+    /// Rake percentage (0-100)
+    pub rake_percent: u8,
+    /// Maximum rake per pot
+    pub rake_cap: u64,
+    /// RNG client seed for provably fair shuffle
+    pub client_seed: Option<String>,
 }
 
 impl PokerGame {
@@ -131,7 +228,24 @@ impl PokerGame {
             hand_id: 0,
             min_raise: big_blind,
             action_deadline_micros: 0,
+            side_pots: vec![],
+            rake_collected: 0,
+            rake_percent: DEFAULT_RAKE_PERCENT,
+            rake_cap: DEFAULT_RAKE_CAP,
+            client_seed: None,
         }
+    }
+
+    /// Create a game with custom rake settings
+    pub fn with_rake(mut self, percent: u8, cap: u64) -> Self {
+        self.rake_percent = percent;
+        self.rake_cap = cap;
+        self
+    }
+
+    /// Set client seed for provably fair RNG
+    pub fn set_client_seed(&mut self, seed: String) {
+        self.client_seed = Some(seed);
     }
 
     pub fn add_player(&mut self, player: PokerPlayer) -> Result<(), String> {
@@ -251,6 +365,172 @@ impl PokerGame {
         }
         // If there are no active players, we consider the round complete.
         !active_found || true
+    }
+
+    /// Calculate side pots for all-in scenarios
+    /// Call this when the hand is complete before distributing winnings
+    pub fn calculate_side_pots(&mut self) {
+        self.side_pots.clear();
+        
+        // Get all-in amounts sorted
+        let mut contributions: Vec<(u8, u64)> = self.players
+            .iter()
+            .filter(|p| !p.is_folded && p.is_active)
+            .map(|p| (p.id, p.current_bet))
+            .collect();
+        
+        if contributions.is_empty() {
+            return;
+        }
+        
+        contributions.sort_by_key(|x| x.1);
+        
+        let mut prev_level = 0u64;
+        let mut processed_ids: Vec<u8> = Vec::new();
+        
+        for (player_id, contribution) in &contributions {
+            if *contribution > prev_level {
+                let level_contribution = contribution - prev_level;
+                
+                // Eligible players are those who contributed at least this level
+                let eligible: Vec<u8> = self.players
+                    .iter()
+                    .filter(|p| !p.is_folded && p.current_bet >= *contribution)
+                    .map(|p| p.id)
+                    .collect();
+                
+                // Count players contributing to this pot level
+                let contributors = self.players
+                    .iter()
+                    .filter(|p| p.current_bet > prev_level)
+                    .count() as u64;
+                
+                let pot_amount = level_contribution * contributors;
+                
+                if pot_amount > 0 && !eligible.is_empty() {
+                    self.side_pots.push(SidePot {
+                        amount: pot_amount,
+                        eligible_players: eligible,
+                        contribution_level: *contribution,
+                    });
+                }
+                
+                prev_level = *contribution;
+            }
+            processed_ids.push(*player_id);
+        }
+    }
+
+    /// Calculate and collect rake from the pot
+    /// Returns the rake amount collected
+    pub fn collect_rake(&mut self) -> u64 {
+        if self.rake_percent == 0 {
+            return 0;
+        }
+        
+        let rake = ((self.pot as u128 * self.rake_percent as u128) / 100) as u64;
+        let rake = rake.min(self.rake_cap);
+        
+        if rake > 0 && self.pot >= rake {
+            self.pot -= rake;
+            self.rake_collected += rake;
+        }
+        
+        rake
+    }
+
+    /// Get total rake collected this session
+    pub fn total_rake(&self) -> u64 {
+        self.rake_collected
+    }
+
+    /// Distribute pot to winner(s) after collecting rake
+    /// Returns a list of (player_id, amount) for each winner
+    pub fn distribute_pot(&mut self, winner_ids: &[u8]) -> Vec<(u8, u64)> {
+        self.collect_rake();
+        
+        if winner_ids.is_empty() {
+            return vec![];
+        }
+        
+        let share = self.pot / winner_ids.len() as u64;
+        let remainder = self.pot % winner_ids.len() as u64;
+        
+        let mut payouts: Vec<(u8, u64)> = Vec::new();
+        
+        for (i, &winner_id) in winner_ids.iter().enumerate() {
+            // First winner gets any remainder
+            let amount = if i == 0 { share + remainder } else { share };
+            
+            if let Some(player) = self.players.iter_mut().find(|p| p.id == winner_id) {
+                player.chips += amount;
+                player.session_stats.record_hand(player.current_bet, amount);
+                payouts.push((winner_id, amount));
+            }
+        }
+        
+        self.pot = 0;
+        payouts
+    }
+
+    /// Distribute side pots to winners based on hand strength
+    /// hand_evaluator is a function that returns (score, [player_ids]) for best hands
+    pub fn distribute_side_pots<F>(&mut self, mut evaluate_best: F) -> Vec<(u8, u64)>
+    where
+        F: FnMut(&[u8]) -> Vec<u8>, // Given eligible player IDs, return winner IDs
+    {
+        self.collect_rake();
+        
+        let mut all_payouts: Vec<(u8, u64)> = Vec::new();
+        
+        for pot in &self.side_pots {
+            let winners = evaluate_best(&pot.eligible_players);
+            if winners.is_empty() {
+                continue;
+            }
+            
+            let share = pot.amount / winners.len() as u64;
+            let remainder = pot.amount % winners.len() as u64;
+            
+            for (i, &winner_id) in winners.iter().enumerate() {
+                let amount = if i == 0 { share + remainder } else { share };
+                all_payouts.push((winner_id, amount));
+            }
+        }
+        
+        // Apply payouts to player chips
+        for (player_id, amount) in &all_payouts {
+            if let Some(player) = self.players.iter_mut().find(|p| p.id == *player_id) {
+                player.chips += amount;
+            }
+        }
+        
+        self.pot = 0;
+        self.side_pots.clear();
+        all_payouts
+    }
+
+    /// Reset for a new hand
+    pub fn reset_for_new_hand(&mut self) {
+        self.pot = 0;
+        self.current_bet = 0;
+        self.community_cards.clear();
+        self.side_pots.clear();
+        self.current_round = BettingRound::PreFlop;
+        self.status = PokerStatus::WaitingForPlayers;
+        self.min_raise = self.big_blind;
+        self.hand_id += 1;
+        
+        for player in &mut self.players {
+            player.hole_cards.clear();
+            player.current_bet = 0;
+            player.is_folded = false;
+            player.is_all_in = false;
+            // Auto-fold sitting out players
+            if player.is_sitting_out {
+                player.is_folded = true;
+            }
+        }
     }
 }
 

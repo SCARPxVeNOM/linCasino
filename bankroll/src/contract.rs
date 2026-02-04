@@ -3,8 +3,12 @@
 mod state;
 
 use self::state::BankrollState;
-use bankroll::{BankrollMessage, BankrollOperation, BankrollParameters, BankrollResponse, DebtRecord, DebtStatus, PublicChainBalances, TokenPotRecord};
-use linera_sdk::linera_base_types::ChainId;
+use bankroll::{
+    BankrollMessage, BankrollOperation, BankrollParameters, BankrollResponse,
+    DebtRecord, DebtStatus, PublicChainBalances, StakerInfo,
+    TokenPotRecord,
+};
+use linera_sdk::linera_base_types::{Amount, ChainId};
 use linera_sdk::{
     linera_base_types::WithContractAbi,
     views::{RootView, View},
@@ -143,6 +147,314 @@ impl Contract for BankrollContract {
                     panic!("Failed to update record for Public Chain ID: {}", chain_id);
                 });
 
+                BankrollResponse::Ok
+            }
+            // === Staking Operations ===
+            BankrollOperation::Stake { amount } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::Stake from {:?}, amount: {}", owner, amount);
+                
+                // Check minimum stake amount
+                let config = self.state.casino_config.get();
+                if amount < config.min_stake_amount {
+                    return BankrollResponse::Error(format!("Minimum stake is {}", config.min_stake_amount));
+                }
+                
+                // Get user balance
+                let balance = self.state.accounts.get(&owner).await.expect("Failed to get balance").unwrap_or(Amount::ZERO);
+                if balance < amount {
+                    return BankrollResponse::Error("Insufficient balance".to_string());
+                }
+                
+                // Deduct from balance
+                let new_balance = balance.saturating_sub(amount);
+                self.state.accounts.insert(&owner, new_balance).expect("Failed to update balance");
+                
+                // Update staking pool
+                let mut pool = self.state.staking_pool.get().clone();
+                let current_time = self.runtime.system_time();
+                
+                // Get or create staker info
+                let existing_staker = self.state.stakers.get(&owner).await.expect("Failed to get staker");
+                let mut staker_info = match existing_staker {
+                    Some(mut info) => {
+                        // Calculate and add pending rewards before adding new stake
+                        info.unclaimed_rewards = info.earned(pool.reward_per_token);
+                        info.staked_amount.saturating_add_assign(amount);
+                        info.reward_per_token_paid = pool.reward_per_token;
+                        info
+                    }
+                    None => {
+                        pool.staker_count += 1;
+                        StakerInfo::new(owner, amount, current_time)
+                    }
+                };
+                staker_info.stake_timestamp = current_time;
+                
+                pool.total_staked.saturating_add_assign(amount);
+                pool.last_update_time = current_time;
+                
+                self.state.staking_pool.set(pool);
+                self.state.stakers.insert(&owner, staker_info.clone()).expect("Failed to update staker");
+                
+                log::info!("Stake successful. New staked amount: {}", staker_info.staked_amount);
+                BankrollResponse::StakingInfo(staker_info)
+            }
+            BankrollOperation::Unstake { amount } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::Unstake from {:?}, amount: {}", owner, amount);
+                
+                // Get staker info
+                let existing_staker = self.state.stakers.get(&owner).await.expect("Failed to get staker");
+                let staker_result = match existing_staker {
+                    Some(info) => info,
+                    None => return BankrollResponse::Error("No staked amount found".to_string()),
+                };
+                let mut staker_info = staker_result;
+                
+                if staker_info.staked_amount < amount {
+                    return BankrollResponse::Error("Insufficient staked amount".to_string());
+                }
+                
+                // Update staking pool
+                let mut pool = self.state.staking_pool.get().clone();
+                
+                // Calculate and add pending rewards before unstaking
+                staker_info.unclaimed_rewards = staker_info.earned(pool.reward_per_token);
+                staker_info.staked_amount = staker_info.staked_amount.saturating_sub(amount);
+                staker_info.reward_per_token_paid = pool.reward_per_token;
+                
+                pool.total_staked = pool.total_staked.saturating_sub(amount);
+                pool.last_update_time = self.runtime.system_time();
+                
+                // Add to user balance
+                let balance = self.state.accounts.get(&owner).await.expect("Failed to get balance").unwrap_or(Amount::ZERO);
+                let new_balance = balance.saturating_add(amount);
+                self.state.accounts.insert(&owner, new_balance).expect("Failed to update balance");
+                
+                self.state.staking_pool.set(pool);
+                self.state.stakers.insert(&owner, staker_info.clone()).expect("Failed to update staker");
+                
+                log::info!("Unstake successful. Remaining staked: {}", staker_info.staked_amount);
+                BankrollResponse::StakingInfo(staker_info)
+            }
+            BankrollOperation::ClaimStakingRewards => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::ClaimStakingRewards from {:?}", owner);
+                
+                // Get staker info
+                let existing_staker = self.state.stakers.get(&owner).await.expect("Failed to get staker");
+                let mut staker_info = match existing_staker {
+                    Some(info) => info,
+                    None => return BankrollResponse::Error("No staking position found".to_string()),
+                };
+                
+                let pool = self.state.staking_pool.get();
+                let rewards = staker_info.earned(pool.reward_per_token);
+                
+                if rewards == Amount::ZERO {
+                    return BankrollResponse::Error("No rewards to claim".to_string());
+                }
+                
+                // Reset rewards tracking
+                staker_info.unclaimed_rewards = Amount::ZERO;
+                staker_info.reward_per_token_paid = pool.reward_per_token;
+                staker_info.last_reward_claim = self.runtime.system_time();
+                
+                // Add rewards to balance
+                let balance = self.state.accounts.get(&owner).await.expect("Failed to get balance").unwrap_or(Amount::ZERO);
+                let new_balance = balance.saturating_add(rewards);
+                self.state.accounts.insert(&owner, new_balance).expect("Failed to update balance");
+                
+                self.state.stakers.insert(&owner, staker_info.clone()).expect("Failed to update staker");
+                
+                log::info!("Claimed rewards: {}", rewards);
+                BankrollResponse::StakingInfo(staker_info)
+            }
+            BankrollOperation::GetStakingInfo { owner } => {
+                log::info!("BankrollOperation::GetStakingInfo for {:?}", owner);
+                
+                let staker = self.state.stakers.get(&owner).await.expect("Failed to get staker");
+                match staker {
+                    Some(info) => BankrollResponse::StakingInfo(info),
+                    None => BankrollResponse::StakingInfo(StakerInfo::default()),
+                }
+            }
+            // === Responsible Gaming Operations ===
+            BankrollOperation::SetDailyLossLimit { limit } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::SetDailyLossLimit for {:?}, limit: {}", owner, limit);
+                
+                let existing = self.state.player_limits.get(&owner).await.expect("Failed to get limits");
+                let mut limits = existing.unwrap_or_default();
+                limits.daily_loss_limit = Some(limit);
+                
+                self.state.player_limits.insert(&owner, limits.clone()).expect("Failed to update limits");
+                BankrollResponse::PlayerLimits(limits)
+            }
+            BankrollOperation::SetMaxSingleBet { limit } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::SetMaxSingleBet for {:?}, limit: {}", owner, limit);
+                
+                let existing = self.state.player_limits.get(&owner).await.expect("Failed to get limits");
+                let mut limits = existing.unwrap_or_default();
+                limits.max_single_bet = Some(limit);
+                
+                self.state.player_limits.insert(&owner, limits.clone()).expect("Failed to update limits");
+                BankrollResponse::PlayerLimits(limits)
+            }
+            BankrollOperation::SelfExclude { duration_days } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::SelfExclude for {:?}, days: {}", owner, duration_days);
+                
+                let existing = self.state.player_limits.get(&owner).await.expect("Failed to get limits");
+                let mut limits = existing.unwrap_or_default();
+                limits.set_self_exclusion(duration_days, self.runtime.system_time());
+                
+                self.state.player_limits.insert(&owner, limits.clone()).expect("Failed to update limits");
+                BankrollResponse::PlayerLimits(limits)
+            }
+            BankrollOperation::RemoveSelfExclusion => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::RemoveSelfExclusion for {:?}", owner);
+                
+                let existing = self.state.player_limits.get(&owner).await.expect("Failed to get limits");
+                let mut limits = match existing {
+                    Some(l) => l,
+                    None => return BankrollResponse::Error("No limits found".to_string()),
+                };
+                
+                match limits.remove_self_exclusion(self.runtime.system_time()) {
+                    Ok(()) => {
+                        self.state.player_limits.insert(&owner, limits.clone()).expect("Failed to update limits");
+                        BankrollResponse::PlayerLimits(limits)
+                    }
+                    Err(e) => BankrollResponse::Error(e),
+                }
+            }
+            BankrollOperation::GetPlayerLimits { owner } => {
+                log::info!("BankrollOperation::GetPlayerLimits for {:?}", owner);
+                
+                let limits = self.state.player_limits.get(&owner).await.expect("Failed to get limits").unwrap_or_default();
+                BankrollResponse::PlayerLimits(limits)
+            }
+            // === Admin Operations ===
+            BankrollOperation::SetGlobalConfig { config } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::SetGlobalConfig from {:?}", owner);
+                
+                // Check if caller is admin
+                let access = self.state.access_control.get();
+                if !access.is_admin(&owner) {
+                    return BankrollResponse::Error("Admin access required".to_string());
+                }
+                
+                self.state.casino_config.set(config);
+                log::info!("Global config updated");
+                BankrollResponse::Ok
+            }
+            BankrollOperation::PauseGame { game_type } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::PauseGame from {:?}, game: {}", owner, game_type);
+                
+                let access = self.state.access_control.get();
+                if !access.is_operator(&owner) {
+                    return BankrollResponse::Error("Operator access required".to_string());
+                }
+                
+                let mut config = self.state.casino_config.get().clone();
+                if !config.paused_games.contains(&game_type) {
+                    config.paused_games.push(game_type.clone());
+                }
+                self.state.casino_config.set(config);
+                
+                log::info!("Game {} paused", game_type);
+                BankrollResponse::Ok
+            }
+            BankrollOperation::UnpauseGame { game_type } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::UnpauseGame from {:?}, game: {}", owner, game_type);
+                
+                let access = self.state.access_control.get();
+                if !access.is_operator(&owner) {
+                    return BankrollResponse::Error("Operator access required".to_string());
+                }
+                
+                let mut config = self.state.casino_config.get().clone();
+                config.paused_games.retain(|g| g != &game_type);
+                self.state.casino_config.set(config);
+                
+                log::info!("Game {} unpaused", game_type);
+                BankrollResponse::Ok
+            }
+            BankrollOperation::SetAdmin { new_admin } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::SetAdmin from {:?}, new_admin: {:?}", owner, new_admin);
+                
+                let mut access = self.state.access_control.get().clone();
+                
+                // Only existing admin can set new admin (or if no admin exists yet)
+                if access.admin.is_some() && !access.is_admin(&owner) {
+                    return BankrollResponse::Error("Only current admin can set new admin".to_string());
+                }
+                
+                access.admin = Some(new_admin);
+                self.state.access_control.set(access);
+                
+                log::info!("Admin updated");
+                BankrollResponse::Ok
+            }
+            BankrollOperation::AddOperator { operator } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::AddOperator from {:?}, operator: {:?}", owner, operator);
+                
+                let mut access = self.state.access_control.get().clone();
+                if !access.is_admin(&owner) {
+                    return BankrollResponse::Error("Admin access required".to_string());
+                }
+                
+                access.add_operator(operator);
+                self.state.access_control.set(access);
+                
+                log::info!("Operator added");
+                BankrollResponse::Ok
+            }
+            BankrollOperation::RemoveOperator { operator } => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::RemoveOperator from {:?}, operator: {:?}", owner, operator);
+                
+                let mut access = self.state.access_control.get().clone();
+                if !access.is_admin(&owner) {
+                    return BankrollResponse::Error("Admin access required".to_string());
+                }
+                
+                access.remove_operator(&operator);
+                self.state.access_control.set(access);
+                
+                log::info!("Operator removed");
+                BankrollResponse::Ok
+            }
+            BankrollOperation::DistributeStakingRewards => {
+                let owner = self.runtime.authenticated_signer().expect("No authenticated signer");
+                log::info!("BankrollOperation::DistributeStakingRewards from {:?}", owner);
+                
+                let access = self.state.access_control.get();
+                if !access.is_operator(&owner) {
+                    return BankrollResponse::Error("Operator access required".to_string());
+                }
+                
+                let mut pool = self.state.staking_pool.get().clone();
+                if pool.total_profit == Amount::ZERO {
+                    return BankrollResponse::Error("No profits to distribute".to_string());
+                }
+                
+                // The profit has already been added to reward_per_token via add_profit()
+                // Reset total_profit for next distribution cycle
+                pool.total_profit = Amount::ZERO;
+                pool.last_update_time = self.runtime.system_time();
+                self.state.staking_pool.set(pool);
+                
+                log::info!("Staking rewards distributed");
                 BankrollResponse::Ok
             }
         }
@@ -294,6 +606,15 @@ impl Contract for BankrollContract {
                 self.state.balances.insert(&origin_chain_id, data).unwrap_or_else(|_| {
                     panic!("Failed to update record for Public Chain ID: {}", origin_chain_id);
                 });
+            }
+            // === Staking Messages ===
+            BankrollMessage::StakingRewardDistribution { amount_per_token } => {
+                log::info!(
+                    "BankrollMessage::StakingRewardDistribution from {:?} amount_per_token: {}",
+                    origin_chain_id,
+                    amount_per_token
+                );
+                // TODO: Update staker rewards based on amount_per_token
             }
         }
     }

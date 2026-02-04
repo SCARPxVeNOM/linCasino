@@ -4,7 +4,7 @@ mod state;
 
 use self::state::RouletteState;
 use abi::roulette::{Bet, RouletteGame, UserStatus};
-use abi::random::get_random_value;
+use abi::provably_fair::ProvablyFairRNG;
 use bankroll::{BankrollOperation, BankrollResponse};
 use linera_sdk::{
     linera_base_types::WithContractAbi,
@@ -65,7 +65,10 @@ impl Contract for RouletteContract {
                 }
             }
             RouletteOperation::StartSinglePlayerGame { name: _ } => {
-                let game = RouletteGame::new();
+                let mut game = RouletteGame::new();
+                let timestamp = self.runtime.system_time();
+                // Default 60 second betting period
+                game.start_betting(timestamp.micros(), 60_000_000);
                 self.state.single_player_game.set(game);
                 self.state.user_status.set(UserStatus::InSinglePlayerGame);
             }
@@ -75,24 +78,41 @@ impl Contract for RouletteContract {
                 // First convert to u128, then to u64
                 let amount_u128: u128 = amount.saturating_div(1u128).into();
                 let amount_u64: u64 = amount_u128.min(u64::MAX as u128) as u64;
+                let current_time_micros = self.runtime.system_time().micros();
                 let bet = Bet {
                     bet_type: bet_type.clone(),
                     amount: amount_u64,
                     player_id: 0,
+                    placed_at_micros: current_time_micros,
                 };
                 let _ = game.place_bet(bet);
                 self.state.single_player_game.set(game);
             }
             RouletteOperation::Spin {} => {
-                let game = self.state.single_player_game.get_mut();
-                let timestamp = self.runtime.system_time().to_string();
-                let hash = format!("{:?}", self.runtime.chain_id());
-                // Generate random number between 0 and 36
-                let result = get_random_value(0, 37, hash, timestamp).unwrap_or(0) as u8;
+                let mut game = self.state.single_player_game.get().clone();
+                let timestamp = self.runtime.system_time();
+                let chain_id_str = format!("{:?}", self.runtime.chain_id());
+                
+                // Create provably fair RNG for spin
+                let server_seed = format!("{}-{}-roulette-{}", chain_id_str, timestamp.micros(), game.round_number);
+                let client_seed = game.client_seed.clone().unwrap_or_else(|| format!("round-{}", game.round_number));
+                
+                let (mut rng, original_seed) = ProvablyFairRNG::new(&server_seed);
+                rng.set_client_seed(client_seed);
+                
+                // Reveal and generate result (0-36)
+                let _ = rng.reveal(original_seed.clone());
+                let result = rng.generate_result(&original_seed, 0, 37).unwrap_or(0) as u8;
+                
+                log::info!("Provably fair roulette spin: result={}, server_seed_hash={:?}", result, rng.server_seed_hash);
+                
                 let _winnings = game.spin(result).unwrap_or_default();
-                let game_clone = game.clone();
-                let _ = game; // Release mutable borrow before set
-                self.state.single_player_game.set(game_clone);
+                self.state.single_player_game.set(game);
+            }
+            RouletteOperation::SetClientSeed { seed } => {
+                let mut game = self.state.single_player_game.get().clone();
+                game.set_client_seed(seed);
+                self.state.single_player_game.set(game);
             }
             _ => {
                 log::info!("Roulette operation not yet implemented: {:?}", operation);
@@ -108,4 +128,3 @@ impl Contract for RouletteContract {
         self.state.save().await.expect("Failed to save state");
     }
 }
-
