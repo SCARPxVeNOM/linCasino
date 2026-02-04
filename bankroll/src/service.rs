@@ -5,7 +5,11 @@ mod state;
 use std::sync::Arc;
 
 use async_graphql::{EmptySubscription, Object, Schema};
-use bankroll::{BankrollOperation, DailyBonus, PublicChainBalances};
+use bankroll::{
+    AccessControl, BankrollOperation, CasinoConfig, DailyBonus, PlayerLimits, PlayerStats,
+    PublicChainBalances, StakerInfo, StakingPool,
+};
+use linera_sdk::linera_base_types::AccountOwner;
 use linera_sdk::{graphql::GraphQLMutationRoot, linera_base_types::WithServiceAbi, views::View, Service, ServiceRuntime};
 
 use self::state::BankrollState;
@@ -69,6 +73,32 @@ impl QueryRoot {
         }
 
         data
+    }
+
+    // === NEW QUERIES ===
+
+    async fn get_staking_pool(&self) -> StakingPool {
+        self.state.staking_pool.get().clone()
+    }
+
+    async fn get_staker_info(&self, owner: AccountOwner) -> StakerInfo {
+        self.state.stakers.get(&owner).await.unwrap_or_default().unwrap_or_default()
+    }
+
+    async fn get_player_limits(&self, owner: AccountOwner) -> PlayerLimits {
+        self.state.player_limits.get(&owner).await.unwrap_or_default().unwrap_or_default()
+    }
+
+    async fn get_player_stats(&self, owner: AccountOwner) -> PlayerStats {
+        self.state.player_stats.get(&owner).await.unwrap_or_default().unwrap_or_default()
+    }
+
+    async fn get_casino_config(&self) -> CasinoConfig {
+        self.state.casino_config.get().clone()
+    }
+    
+    async fn get_access_control(&self) -> AccessControl {
+        self.state.access_control.get().clone()
     }
 }
 
