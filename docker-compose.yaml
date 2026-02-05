@@ -1,0 +1,53 @@
+
+services:
+  linera-casino:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linera-casino
+    restart: unless-stopped
+    ports:
+      # Frontend web servers (3 players)
+      - "5173:5173"  # Player A web UI
+      - "5174:5174"  # Player B web UI
+      - "5175:5175"  # Player C web UI
+      # GraphQL node services
+      - "8081:8081"  # Player A GraphQL
+      - "8082:8082"  # Player B GraphQL
+      - "8083:8083"  # Player C GraphQL
+      # Linera faucet proxy
+      - "8080:8080"
+    volumes:
+      # Mount project directory for live updates
+      - .:/build
+      # Named volume for Linera wallet/chain data persistence
+      - linera-data:/tmp/linera_testnet
+    environment:
+      - RUST_LOG=info
+      - LINERA_TMP_DIR=/tmp/linera_testnet
+      - LINERA_MAX_PENDING_MESSAGES=100
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5173", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    # Resource limits for stable operation
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+    networks:
+      - casino-network
+    stdin_open: true
+    tty: true
+
+networks:
+  casino-network:
+    driver: bridge
+
+volumes:
+  linera-data:
+    driver: local

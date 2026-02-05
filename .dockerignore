@@ -1,0 +1,43 @@
+# Git
+.git
+.gitignore
+
+# Rust build artifacts (very large)
+target/
+
+# Node modules
+node_modules/
+frontend/node_modules/
+croissant/node_modules/
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+run_output.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Local environment files
+.env.local
+.env.*.local
+
+# Build outputs (will be rebuilt in container)
+frontend/dist/
+frontend/web_a/
+frontend/web_b/
+frontend/web_c/
+
+# Linera local data
+*.db
+*.json.bak

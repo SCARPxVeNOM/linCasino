@@ -15,7 +15,7 @@ Linera Casino is a multi-chain casino built on [Linera](https://linera.io/) that
 - `frontend/` – React + TypeScript UI (Vite) and static web bundles
 - `croissant/` – extension and WASM client utilities (optional)
 - `run.bash` – end-to-end setup against Linera Testnet Conway
-- `compose.yaml` / `Dockerfile` – containerized runner for the whole stack
+- `docker-compose.yaml` / `Dockerfile` – containerized runner for the whole stack
 
 ## Prerequisites
 - Rust 1.86+ with `wasm32-unknown-unknown` target
@@ -25,6 +25,14 @@ Linera Casino is a multi-chain casino built on [Linera](https://linera.io/) that
 - `jq` and `curl` (run.bash uses them), `http-server` is installed via npm when building the Docker image
 
 ## Quick Start (Docker)
+
+The Docker setup includes:
+- **Healthchecks**: Automatic service monitoring with 2-minute startup grace period
+- **Persistent volumes**: Wallet/chain data survives container restarts
+- **Resource limits**: 8GB memory limit for stable operation
+- **Auto-restart**: `unless-stopped` restart policy
+
+### Steps:
 1) Install dependencies and build the frontend once:
 ```bash
 cd frontend
@@ -34,11 +42,16 @@ cd ..
 ```
 2) Launch the stack:
 ```bash
-docker compose up -d --build
+docker-compose up -d --build
 ```
 The container runs `run.bash`, deploys apps to Testnet Conway, generates per-player configs, and hosts static sites.
 
-3) Visit the players:
+3) View logs:
+```bash
+docker-compose logs -f
+```
+
+4) Visit the players:
 - Player 1: http://localhost:5173
 - Player 2: http://localhost:5174
 - Player 3: http://localhost:5175
@@ -82,10 +95,10 @@ Point `frontend/public/config.json` to your desired node URLs/app IDs when devel
 - Bankroll sync on sit/leave/settlement; frontend polls GraphQL every ~800ms
 
 ## Troubleshooting
-- Services down in Docker: `docker compose logs -f casino`
-- Port conflicts: adjust mappings in `compose.yaml`
+- Services down in Docker: `docker-compose logs -f linera-casino`
+- Port conflicts: adjust mappings in `docker-compose.yaml`
 - GraphQL errors: confirm config JSON matches deployed app IDs and chain IDs
-- Re-run after UI changes: rebuild the frontend before `run.bash` or `docker compose up --build`
+- Re-run after UI changes: rebuild the frontend before `run.bash` or `docker-compose up --build`
 
 ## Contributing
 PRs welcome—keep Rust/TS code formatted, ensure WASM builds succeed, and verify the frontend builds before submitting.
