@@ -3,102 +3,114 @@
 Linera Casino is a multi-chain casino built on [Linera](https://linera.io/) that demonstrates real-time multiplayer games (Poker, Rummy, Roulette) with cross-chain state, shared bankroll, and a React/Vite frontend.
 
 ## Features
-- Real-time multiplayer Poker (Texas Hold'em) with authoritative play-chain state and timeout handling
-- Rummy and Roulette implementations sharing a common bankroll application
-- Multi-chain topology: master/public/play/user chains for routing, execution, and balances
-- GraphQL services for game state and actions, plus optional Croissant wallet support
+
+### Core Games
+- **Poker** (Texas Hold'em) – Real-time multiplayer with side pots, rake collection, and timeout handling
+- **Roulette** – European wheel with inside bets (Split, Street, Corner, Line, Basket) and call bets (Voisins, Tiers, Orphelins, Neighbors)
+- **Rummy** – Card matching game sharing the common bankroll
+
+### Provably Fair System
+- Commit-reveal RNG scheme for verifiable randomness
+- Server seeds hashed before play; client seeds accepted for additional entropy
+- Full verification proofs available post-game
+
+### Staking & Profit Sharing
+- Stake tokens to earn a share of house profits (rake)
+- Real-time reward calculation based on stake proportion
+- Claim rewards at any time
+
+### Responsible Gaming
+- Daily loss limits (self-set)
+- Maximum single bet limits
+- Self-exclusion periods (1-365 days)
+- Automatic enforcement at the contract level
+
+### VIP System
+- Five tiers: Bronze → Silver → Gold → Platinum → Diamond
+- Tier based on lifetime wagered amount
+- Higher tiers receive bonus multipliers on rewards
+
+### Governance & Admin
+- Admin can pause/unpause games
+- Configurable rake percentages and caps
+- Operator roles for delegated management
 
 ## Repository Layout
-- `abi/` – shared game logic (poker, rummy, roulette, deck, RNG)
-- `bankroll/` – token management contract and GraphQL service
-- `poker/`, `rummy/`, `roulette/` – game applications
-- `frontend/` – React + TypeScript UI (Vite) and static web bundles
-- `croissant/` – extension and WASM client utilities (optional)
-- `run.bash` – end-to-end setup against Linera Testnet Conway
-- `docker-compose.yaml` / `Dockerfile` – containerized runner for the whole stack
+```
+abi/           – Shared game logic (poker, rummy, roulette, deck, provably_fair, audit, tournament)
+bankroll/      – Token management, staking, limits, and governance
+poker/         – Poker application with side pots and rake
+rummy/         – Rummy card game
+roulette/      – Roulette with extended bet types
+frontend/      – React + TypeScript UI (Vite)
+croissant/     – Extension and WASM client utilities (optional)
+run.bash       – End-to-end setup against Linera Testnet Conway
+```
 
 ## Prerequisites
 - Rust 1.86+ with `wasm32-unknown-unknown` target
 - `linera-service` and `linera-storage-service` 0.15.7 on PATH
-- Node.js 18+ (npm) for the frontend; `pnpm` optional for Croissant
+- Node.js 18+ (npm) for the frontend
 - Docker Desktop (if using Compose)
-- `jq` and `curl` (run.bash uses them), `http-server` is installed via npm when building the Docker image
+- `jq` and `curl` for `run.bash`
 
 ## Quick Start (Docker)
-
-The Docker setup includes:
-- **Healthchecks**: Automatic service monitoring with 2-minute startup grace period
-- **Persistent volumes**: Wallet/chain data survives container restarts
-- **Resource limits**: 8GB memory limit for stable operation
-- **Auto-restart**: `unless-stopped` restart policy
-
-### Steps:
-1) Install dependencies and build the frontend once:
 ```bash
-cd frontend
-npm install
-npm run build
-cd ..
-```
-2) Launch the stack:
-```bash
+# Build frontend
+cd frontend && npm install && npm run build && cd ..
+
+# Launch
 docker-compose up -d --build
-```
-The container runs `run.bash`, deploys apps to Testnet Conway, generates per-player configs, and hosts static sites.
 
-3) View logs:
-```bash
+# View logs
 docker-compose logs -f
 ```
 
-4) Visit the players:
+**Access:**
 - Player 1: http://localhost:5173
 - Player 2: http://localhost:5174
 - Player 3: http://localhost:5175
+- GraphQL: http://localhost:8081–8083
 
-GraphQL services: http://localhost:8081–8083 (one per player wallet).
-
-## Manual Run (local host)
-1) Build contracts:
+## Manual Run
 ```bash
+# Build contracts
 cargo build --release --target wasm32-unknown-unknown
-```
-2) Ensure `linera-service` and `linera-storage-service` 0.15.7 are installed, then run:
-```bash
+
+# Deploy and run
 bash run.bash
 ```
-The script:
-- creates wallets via the Conway faucet,
-- publishes bankroll, poker, rummy, roulette apps,
-- spins three Linera services on ports 8081/8082/8083,
-- writes `frontend/web_{a,b,c}/config.json`,
-- serves the built frontend at 5173/5174/5175 using `http-server`.
 
-If you want live frontend dev instead of the static servers:
-```bash
-cd frontend
-npm install
-npm run dev
+## GraphQL API
+
+### Bankroll Queries
+```graphql
+query {
+  getStakingPool { totalStaked, stakerCount, rewardPerToken }
+  getStakerInfo(owner: "...") { stakedAmount, unclaimedRewards }
+  getPlayerLimits(owner: "...") { dailyLossLimit, selfExclusionUntil }
+  getCasinoConfig { pokerRakePercent, pausedGames }
+}
 ```
-Point `frontend/public/config.json` to your desired node URLs/app IDs when developing manually.
 
-## Development Notes
-- Build specific apps: `cargo build -p bankroll -p poker -p rummy -p roulette --release --target wasm32-unknown-unknown`
-- Frontend production build: `npm run build` (outputs to `frontend/dist`)
-- The run script copies `frontend/dist` into `frontend/web_a|b|c`; rebuild before re-running if UI changes.
-- Default ports: 5173/5174/5175 for web, 8081/8082/8083 for GraphQL, 8080 faucet proxy.
+### Game Queries
+```graphql
+query {
+  singlePlayerData { game { pot, sidePots, rakeCollected, clientSeed } }
+}
+```
 
 ## Multiplayer Poker Flow
-- Authoritative state lives on a play chain (`PokerState.game`)
-- Users `Sit` to join; actions (`Bet`, `Call`, `Fold`, etc.) are validated against `hand_id` and `current_player`
-- Heartbeats enforce deadlines; stale/conflicting actions are rejected deterministically
-- Bankroll sync on sit/leave/settlement; frontend polls GraphQL every ~800ms
+1. Authoritative state lives on a play chain
+2. Users `Sit` to join; actions validated against `hand_id` and `current_player`
+3. Side pots calculated automatically for all-in scenarios
+4. Rake collected before pot distribution
+5. Bankroll sync on sit/leave/settlement
 
 ## Troubleshooting
-- Services down in Docker: `docker-compose logs -f linera-casino`
-- Port conflicts: adjust mappings in `docker-compose.yaml`
-- GraphQL errors: confirm config JSON matches deployed app IDs and chain IDs
-- Re-run after UI changes: rebuild the frontend before `run.bash` or `docker-compose up --build`
+- **Services down**: `docker-compose logs -f linera-casino`
+- **Port conflicts**: Adjust in `docker-compose.yaml`
+- **GraphQL errors**: Verify config JSON matches deployed app/chain IDs
 
 ## Contributing
-PRs welcome—keep Rust/TS code formatted, ensure WASM builds succeed, and verify the frontend builds before submitting.
+PRs welcome. Keep Rust/TS formatted, ensure WASM builds, and verify frontend builds before submitting.
