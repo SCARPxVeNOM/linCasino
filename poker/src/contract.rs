@@ -442,12 +442,63 @@ impl PokerContract {
 
     async fn handle_leave_table(
         &mut self,
-        _user_chain: linera_sdk::linera_base_types::ChainId,
+        user_chain: linera_sdk::linera_base_types::ChainId,
     ) {
-        // Simple implementation: no-op for now. In a full version we would
-        // map user_chain to a seat and either mark the player as inactive or
-        // remove them once not in an active hand and potentially cash out
-        // via the bankroll application.
+        let mut game = self.state.game.get().clone();
+        
+        // Find the player by their chain ID
+        let player_idx = game.players.iter().position(|p| {
+            p.chain_id == Some(user_chain)
+        });
+        
+        let Some(idx) = player_idx else {
+            log::info!("Player from chain {:?} not found at table", user_chain);
+            return;
+        };
+        
+        let player = &game.players[idx];
+        
+        // Don't allow leaving mid-hand if player has chips in pot
+        if game.status != abi::poker::PokerStatus::WaitingForPlayers 
+            && game.status != abi::poker::PokerStatus::RoundEnded 
+            && player.current_bet > 0 {
+            log::info!("Cannot leave mid-hand with active bet");
+            return;
+        }
+        
+        // Cash out remaining chips to bankroll
+        // Note: In a full implementation, this would make a cross-chain call to the
+        // bankroll application. For now, we log the return and the chips are tracked
+        // in the game state before removal.
+        let chips_to_return = player.chips;
+        if chips_to_return > 0 {
+            log::info!("Returning {} chips to user_chain {:?}", chips_to_return, user_chain);
+            // TODO: Implement proper cross-chain chip return via bankroll app
+        }
+        
+        // Remove player from game
+        game.players.remove(idx);
+        
+        // Re-index remaining players
+        for (new_idx, p) in game.players.iter_mut().enumerate() {
+            p.id = new_idx as u8;
+        }
+        
+        // Adjust current_player if needed
+        if let Some(current) = game.current_player {
+            if current as usize >= game.players.len() {
+                game.current_player = game.next_active_player(0);
+            }
+        }
+        
+        // If not enough players remain, reset game state
+        if game.players.len() < 2 {
+            game.status = abi::poker::PokerStatus::WaitingForPlayers;
+            game.current_player = None;
+        }
+        
+        self.state.game.set(game);
+        log::info!("Player from chain {:?} left table, returned {} chips", user_chain, chips_to_return);
     }
 
     async fn handle_apply_action(

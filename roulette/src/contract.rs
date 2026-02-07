@@ -114,6 +114,79 @@ impl Contract for RouletteContract {
                 game.set_client_seed(seed);
                 self.state.single_player_game.set(game);
             }
+            RouletteOperation::CommitSeed {} => {
+                // Phase 1: Generate seed, store securely, publish ONLY the hash
+                let mut game = self.state.single_player_game.get().clone();
+                let timestamp = self.runtime.system_time();
+                let chain_id_str = format!("{:?}", self.runtime.chain_id());
+                
+                // Generate server seed
+                let server_seed = format!("{}-{}-roulette-{}", chain_id_str, timestamp.micros(), game.round_number + 1);
+                let hash = ProvablyFairRNG::hash_seed(&server_seed);
+                
+                // Store seed securely (NOT exposed via GraphQL)
+                self.state.pending_server_seed.set(server_seed);
+                
+                // Publish only the hash and start betting period
+                game.server_seed_hash = Some(hash);
+                game.phase = abi::roulette::RoulettePhase::Committed;
+                game.start_betting(timestamp.micros(), 60_000_000); // 60 second betting window
+                
+                log::info!("Commit phase: seed hash published, betting open for 60 seconds");
+                self.state.single_player_game.set(game);
+            }
+            RouletteOperation::RevealAndSpin {} => {
+                // Phase 2: After betting closes, reveal seed and generate result
+                let mut game = self.state.single_player_game.get().clone();
+                let now = self.runtime.system_time().micros();
+                
+                // Verify betting period has ended
+                if now < game.betting_deadline_micros {
+                    log::warn!("Cannot reveal while betting is still open - {} micros remaining", 
+                        game.betting_deadline_micros - now);
+                    return;
+                }
+                
+                // Verify we're in the committed phase
+                if game.phase != abi::roulette::RoulettePhase::Committed {
+                    log::warn!("Invalid phase for reveal: {:?}", game.phase);
+                    return;
+                }
+                
+                // Get the stored seed
+                let server_seed = self.state.pending_server_seed.get().clone();
+                if server_seed.is_empty() {
+                    log::warn!("No pending server seed found");
+                    return;
+                }
+                
+                let client_seed = game.client_seed.clone().unwrap_or_else(|| format!("round-{}", game.round_number));
+                
+                // Verify the seed matches the committed hash
+                let computed_hash = ProvablyFairRNG::hash_seed(&server_seed);
+                if game.server_seed_hash.as_ref() != Some(&computed_hash) {
+                    log::error!("Server seed does not match committed hash!");
+                    return;
+                }
+                
+                // Create RNG and generate result
+                let (mut rng, _) = ProvablyFairRNG::new(&server_seed);
+                rng.set_client_seed(client_seed);
+                let result = rng.generate_result(&server_seed, 0, 37).unwrap_or(0) as u8;
+                
+                // Store the revealed seed for verification
+                game.revealed_server_seed = Some(server_seed.clone());
+                game.phase = abi::roulette::RoulettePhase::Revealed;
+                
+                log::info!("Reveal phase: seed={}, result={}", server_seed, result);
+                
+                // Spin the wheel with the verified random result
+                let _winnings = game.spin(result).unwrap_or_default();
+                
+                // Clear pending seed
+                self.state.pending_server_seed.set(String::new());
+                self.state.single_player_game.set(game);
+            }
             _ => {
                 log::info!("Roulette operation not yet implemented: {:?}", operation);
             }

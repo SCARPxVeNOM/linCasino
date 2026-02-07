@@ -48,7 +48,7 @@ run.bash       – End-to-end setup against Linera Testnet Conway
 ```
 
 ## Prerequisites
-- Rust 1.86+ with `wasm32-unknown-unknown` target
+- Rust nightly-2025-01-15 (specified in `rust-toolchain.toml`) with `wasm32-unknown-unknown` target
 - `linera-service` and `linera-storage-service` 0.15.7 on PATH
 - Node.js 18+ (npm) for the frontend
 - Docker Desktop (if using Compose)

@@ -1,7 +1,7 @@
 # LinCasino Docker Image
 # Builds Rust/Linera environment with Node.js for the casino platform
 
-FROM rust:1.86-slim
+FROM rustlang/rust:nightly-slim
 
 LABEL maintainer="LinCasino Team"
 LABEL description="Linera Casino - Multi-chain casino with Poker, Rummy, and Roulette"
@@ -13,6 +13,7 @@ SHELL ["bash", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     protobuf-compiler \
+    libprotobuf-dev \
     clang \
     make \
     jq \

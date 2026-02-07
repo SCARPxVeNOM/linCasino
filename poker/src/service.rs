@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use self::state::PokerState;
 use abi::bet_chip_profile::Profile;
-use abi::poker::{GameData, PokerLobby, UserStatus};
+use abi::poker::{GameData, PokerLobby, UserStatus, PublicGameData};
 use async_graphql::{EmptySubscription, Object, Schema};
 use linera_sdk::linera_base_types::ChainId;
 use linera_sdk::{graphql::GraphQLMutationRoot, linera_base_types::WithServiceAbi, views::View, Service, ServiceRuntime};
@@ -57,18 +57,21 @@ struct QueryRoot {
 
 #[Object]
 impl QueryRoot {
-    async fn single_player_data(&self) -> GameData {
-        GameData {
+    async fn single_player_data(&self) -> PublicGameData {
+        let game = self.state.single_player_game.get();
+        PublicGameData {
             user_status: self.state.user_status.get().clone(),
-            game: Some(self.state.single_player_game.get().clone()),
+            game: Some(game.to_public_view(Some(0))), // Player 0 can see their own cards
         }
     }
-    async fn multi_player_data(&self) -> GameData {
-        GameData {
+    async fn multi_player_data(&self) -> PublicGameData {
+        let game = self.state.game.get();
+        // For multiplayer, don't reveal any player's hole cards via public queries.
+        // Individual players query their own chain's service endpoint which will
+        // have their specific seat information.
+        PublicGameData {
             user_status: self.state.user_status.get().clone(),
-            // For multiplayer we expose the authoritative table state stored
-            // on the play chain in `game`.
-            game: Some(self.state.game.get().clone()),
+            game: Some(game.to_public_view(None)), // No viewer seat = hide all hole cards
         }
     }
     async fn get_profile(&self) -> Profile {

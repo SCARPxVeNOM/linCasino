@@ -636,3 +636,102 @@ pub struct PokerLobby {
     pub players: Vec<LobbyPlayerInfo>,
 }
 
+/// Player info visible to other players - cards are HIDDEN to prevent cheating
+#[derive(Debug, Clone, Default, Deserialize, Eq, PartialEq, Serialize, SimpleObject)]
+pub struct PublicPokerPlayer {
+    pub id: u8,
+    pub name: String,
+    /// Number of hole cards (not the actual cards!)
+    pub hole_card_count: u8,
+    pub chips: u64,
+    pub current_bet: u64,
+    pub is_folded: bool,
+    pub is_active: bool,
+    pub is_all_in: bool,
+    pub is_sitting_out: bool,
+}
+
+/// A sanitized view of the poker game for GraphQL queries.
+/// Hides other players' hole cards and the deck to prevent cheating.
+#[derive(Debug, Clone, Default, Deserialize, Eq, PartialEq, Serialize, SimpleObject)]
+pub struct PublicPokerGame {
+    /// Players with their hole cards hidden (except for the requesting player)
+    pub players: Vec<PublicPokerPlayer>,
+    /// Community cards (visible to all)
+    pub community_cards: Vec<u8>,
+    /// Current pot size
+    pub pot: u64,
+    /// Current betting round
+    pub current_round: BettingRound,
+    /// Game status
+    pub status: PokerStatus,
+    /// Dealer position
+    pub dealer_position: u8,
+    /// Blinds
+    pub small_blind: u64,
+    pub big_blind: u64,
+    /// Current bet to call
+    pub current_bet: u64,
+    /// Whose turn it is
+    pub current_player: Option<u8>,
+    /// Hand ID
+    pub hand_id: u64,
+    /// Minimum raise amount
+    pub min_raise: u64,
+    /// Action deadline
+    pub action_deadline_micros: u64,
+    /// Side pots for all-in scenarios
+    pub side_pots: Vec<SidePot>,
+    /// Total rake collected this session
+    pub rake_collected: u64,
+    /// The requesting player's own hole cards (only their own, not others')
+    pub my_hole_cards: Vec<u8>,
+}
+
+/// Sanitized game data returned by GraphQL queries
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize, SimpleObject)]
+pub struct PublicGameData {
+    pub user_status: UserStatus,
+    pub game: Option<PublicPokerGame>,
+}
+
+impl PokerGame {
+    /// Create a sanitized public view, revealing cards only for the specified viewer
+    pub fn to_public_view(&self, viewer_seat: Option<u8>) -> PublicPokerGame {
+        let my_hole_cards = viewer_seat
+            .and_then(|seat| self.players.get(seat as usize))
+            .map(|p| p.hole_cards.clone())
+            .unwrap_or_default();
+
+        PublicPokerGame {
+            players: self.players.iter().map(|p| {
+                PublicPokerPlayer {
+                    id: p.id,
+                    name: p.name.clone(),
+                    hole_card_count: p.hole_cards.len() as u8,
+                    chips: p.chips,
+                    current_bet: p.current_bet,
+                    is_folded: p.is_folded,
+                    is_active: p.is_active,
+                    is_all_in: p.is_all_in,
+                    is_sitting_out: p.is_sitting_out,
+                }
+            }).collect(),
+            community_cards: self.community_cards.clone(),
+            pot: self.pot,
+            current_round: self.current_round.clone(),
+            status: self.status.clone(),
+            dealer_position: self.dealer_position,
+            small_blind: self.small_blind,
+            big_blind: self.big_blind,
+            current_bet: self.current_bet,
+            current_player: self.current_player,
+            hand_id: self.hand_id,
+            min_raise: self.min_raise,
+            action_deadline_micros: self.action_deadline_micros,
+            side_pots: self.side_pots.clone(),
+            rake_collected: self.rake_collected,
+            my_hole_cards,
+        }
+    }
+}

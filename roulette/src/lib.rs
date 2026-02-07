@@ -32,11 +32,19 @@ pub enum RouletteOperation {
     RequestTableSeat { seat_id: u8, name: String },
     GetBalance {},
     PlaceBet { bet_type: String, amount: Amount },
+    /// [DEPRECATED] Single-transaction spin - use CommitSeed + RevealAndSpin instead
     Spin {},
     StartSinglePlayerGame { name: String },
     ExitSinglePlayerGame {},
     /// Set client seed for provably fair spin
     SetClientSeed { seed: String },
+    
+    /// Phase 1 of commit-reveal: Generate seed hash and open betting
+    /// The seed is stored securely; only the hash is published
+    CommitSeed {},
+    /// Phase 2 of commit-reveal: Reveal seed and spin wheel
+    /// Only valid after betting period has closed
+    RevealAndSpin {},
 
     // * Master Chain
     AddPlayChain { target_public_chain: ChainId, play_chain_id: ChainId },

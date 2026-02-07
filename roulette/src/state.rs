@@ -22,5 +22,7 @@ pub struct RouletteState {
     pub single_player_game: RegisterView<RouletteGame>,
     // Play Chain
     pub game: RegisterView<RouletteGame>,
+    /// Pending server seed for commit-reveal (NOT exposed via GraphQL - kept secret until reveal)
+    #[graphql(skip)]
+    pub pending_server_seed: RegisterView<String>,
 }
-

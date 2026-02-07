@@ -73,6 +73,22 @@ pub enum RouletteStatus {
     RoundEnded = 3,
 }
 
+scalar!(RoulettePhase);
+/// Phase of the provably fair commit-reveal protocol
+#[derive(Debug, Clone, Default, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize)]
+#[repr(u8)]
+pub enum RoulettePhase {
+    #[default]
+    /// Initial state - no active game
+    Idle = 0,
+    /// Server has committed seed hash, betting window is open
+    Committed = 1,
+    /// Betting period has ended, ready to reveal
+    BettingClosed = 2,
+    /// Seed revealed, results calculated
+    Revealed = 3,
+}
+
 scalar!(UserStatus);
 #[derive(Debug, Clone, Default, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize)]
 #[repr(u8)]
@@ -132,6 +148,10 @@ pub const DEFAULT_BETTING_TIME_MICROS: u64 = 30_000_000;
 #[derive(Debug, Clone, Default, Deserialize, Eq, Ord, PartialOrd, PartialEq, Serialize, SimpleObject)]
 pub struct RouletteGame {
     pub status: RouletteStatus,
+    /// Commit-reveal phase for provably fair RNG
+    pub phase: RoulettePhase,
+    /// SHA256 hash of server seed (published BEFORE betting to prove fairness)
+    pub server_seed_hash: Option<Vec<u8>>,
     pub current_number: Option<u8>,
     pub bets: Vec<Bet>,
     pub history: Vec<u8>,
@@ -150,12 +170,16 @@ pub struct RouletteGame {
     pub round_number: u64,
     /// Client seed for provably fair RNG
     pub client_seed: Option<String>,
+    /// Revealed server seed (only available after game completes)
+    pub revealed_server_seed: Option<String>,
 }
 
 impl RouletteGame {
     pub fn new() -> Self {
         RouletteGame {
             status: RouletteStatus::WaitingForBets,
+            phase: RoulettePhase::Idle,
+            server_seed_hash: None,
             current_number: None,
             bets: vec![],
             history: vec![],
@@ -167,6 +191,7 @@ impl RouletteGame {
             total_bets_amount: 0,
             round_number: 0,
             client_seed: None,
+            revealed_server_seed: None,
         }
     }
 
